@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: Copyright contributors to the vLLM project
 """End-to-end Qwen3.6 MTP quality and API audit.
 
 This harness intentionally exercises the OpenAI-compatible serving path.  It
@@ -27,7 +28,6 @@ from pathlib import Path
 from typing import Any
 
 from transformers import AutoTokenizer
-
 
 DEFAULT_COMPILATION_CONFIG = {
     "cudagraph_mode": "full_and_piecewise",
@@ -97,7 +97,9 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--max-num-batched-tokens", type=int, default=8192)
     parser.add_argument("--max-num-seqs", type=int, default=1)
     parser.add_argument("--mtp-num-speculative-tokens", type=int, default=6)
-    parser.add_argument("--target-lengths", default="512,4096,32768,65536,131072,245760")
+    parser.add_argument(
+        "--target-lengths", default="512,4096,32768,65536,131072,245760"
+    )
     parser.add_argument("--long-output-tokens", type=int, default=96)
     parser.add_argument("--quality-output-tokens", type=int, default=512)
     parser.add_argument("--startup-timeout", type=int, default=900)
@@ -156,7 +158,9 @@ def _base_env(args: argparse.Namespace, scenario_dir: Path) -> dict[str, str]:
     return env
 
 
-def _server_command(args: argparse.Namespace, scenario: Scenario, port: int) -> list[str]:
+def _server_command(
+    args: argparse.Namespace, scenario: Scenario, port: int
+) -> list[str]:
     command = [
         args.python_executable,
         "-m",
@@ -206,7 +210,9 @@ def _server_command(args: argparse.Namespace, scenario: Scenario, port: int) -> 
     if args.disable_custom_all_reduce:
         command.append("--disable-custom-all-reduce")
     if scenario.speculative_config is not None:
-        command.extend(["--speculative-config", json.dumps(scenario.speculative_config)])
+        command.extend(
+            ["--speculative-config", json.dumps(scenario.speculative_config)]
+        )
     return command
 
 
@@ -228,20 +234,26 @@ def _request_json(
         return json.loads(response.read().decode("utf-8"))
 
 
-def _wait_for_server(host: str, port: int, timeout_s: int, proc: subprocess.Popen[Any]) -> None:
+def _wait_for_server(
+    host: str, port: int, timeout_s: int, proc: subprocess.Popen[Any]
+) -> None:
     deadline = time.time() + timeout_s
     url = f"http://{host}:{port}/v1/models"
     last_error = ""
     while time.time() < deadline:
         if proc.poll() is not None:
-            raise RuntimeError(f"server exited early with return code {proc.returncode}")
+            raise RuntimeError(
+                f"server exited early with return code {proc.returncode}"
+            )
         try:
             _request_json(url, timeout=5)
             return
         except Exception as exc:
             last_error = f"{type(exc).__name__}: {exc}"
             time.sleep(2)
-    raise TimeoutError(f"timed out waiting for server at {url}; last_error={last_error}")
+    raise TimeoutError(
+        f"timed out waiting for server at {url}; last_error={last_error}"
+    )
 
 
 def _terminate_process(proc: subprocess.Popen[Any]) -> None:
@@ -401,6 +413,7 @@ def _fit_long_user_prompt(tokenizer: Any, target_tokens: int, code: str) -> str:
         f"When asked for the audit code, answer exactly {code}.\n\n"
     )
     prompt_tail = "</context>\n\nQuestion: What is the exact audit code?"
+
     def make_prompt(unit_count: int) -> str:
         units = [_base_noise_unit(i) for i in range(unit_count)]
         insert_at = len(units) // 2
@@ -697,7 +710,11 @@ def _stream_chat_completion(
                     index = int(tc.get("index", 0))
                     acc = tool_calls.setdefault(
                         index,
-                        {"id": "", "type": "function", "function": {"name": "", "arguments": ""}},
+                        {
+                            "id": "",
+                            "type": "function",
+                            "function": {"name": "", "arguments": ""},
+                        },
                     )
                     if tc.get("id"):
                         acc["id"] += tc["id"]
@@ -835,12 +852,15 @@ def _grade_case(
             fn = first.get("function") or {}
             name = fn.get("name")
             if name != case.expected_tool:
-                failures.append(f"tool name mismatch: expected {case.expected_tool}, got {name}")
+                failures.append(
+                    f"tool name mismatch: expected {case.expected_tool}, got {name}"
+                )
             if case.expected_tool_args:
                 observed_args = _parse_tool_args(first)
                 if not _arg_matches(case.expected_tool_args, observed_args):
                     failures.append(
-                        f"tool args mismatch: expected {case.expected_tool_args}, got {observed_args}"
+                        f"tool args mismatch: expected {case.expected_tool_args}, "
+                        f"got {observed_args}"
                     )
     elif case.category == "tool_call_negative" and tool_calls:
         failures.append(f"unexpected tool_calls: {tool_calls}")
@@ -862,9 +882,7 @@ def _compare_against_baseline(
             cur_text = normalize(row["content"])
             if cur_text != base_text:
                 row["grade"]["passed"] = False
-                row["grade"]["failures"].append(
-                    "greedy output differs from baseline"
-                )
+                row["grade"]["failures"].append("greedy output differs from baseline")
                 row["baseline_content_prefix"] = baseline["content_prefix"]
         elif row["category"] == "long_context":
             base_passed = bool(baseline.get("grade", {}).get("passed"))
@@ -878,7 +896,8 @@ def _summarize(rows: list[dict[str, Any]]) -> dict[str, Any]:
     failed = [
         row["case_id"]
         for row in rows
-        if not row["grade"]["passed"] or row["metrics"]["flagged"]
+        if not row["grade"]["passed"]
+        or row["metrics"]["flagged"]
         or row["metric_delta"].get("corrupted_requests", 0) > 0
     ]
     output_tps = [
@@ -971,9 +990,7 @@ def main() -> int:
                             "category": case.category,
                             "grade": {
                                 "passed": False,
-                                "failures": [
-                                    f"HTTPError {exc.code}: {body[:1000]}"
-                                ],
+                                "failures": [f"HTTPError {exc.code}: {body[:1000]}"],
                             },
                             "metrics": {"flagged": True},
                             "metric_delta": {},

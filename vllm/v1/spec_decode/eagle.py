@@ -1,9 +1,10 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-FileCopyrightText: Copyright contributors to the vLLM project
 import ast
-from importlib.util import find_spec
 import os
-from typing import Any, Iterable, cast
+from collections.abc import Iterable
+from importlib.util import find_spec
+from typing import Any, cast
 
 import numpy as np
 import torch
@@ -558,10 +559,9 @@ class SpecDecodeBaseProposer:
 
         sample_hidden_states = last_hidden_states[token_indices_to_sample]
         debug_logits = None
-        should_collect_draft_logits = (
-            _spec_debug_corruption_enabled(self.method)
-            or _spec_dump_draft_logits_enabled(self.method)
-        )
+        should_collect_draft_logits = _spec_debug_corruption_enabled(
+            self.method
+        ) or _spec_dump_draft_logits_enabled(self.method)
         if should_collect_draft_logits:
             debug_logits = self.model.compute_logits(sample_hidden_states)
             topk = min(5, debug_logits.shape[-1])
@@ -591,12 +591,9 @@ class SpecDecodeBaseProposer:
                 )
                 debug_summary["logits"] = debug_logits.detach().to(torch.float16).cpu()
             self._debug_last_propose_summary = debug_summary
-            if (
-                not getattr(self, "_spec_corruption_dumped", False)
-                and (
-                    int(nan_counts.sum().item()) > 0
-                    or int(nonfinite_counts.sum().item()) > 0
-                )
+            if not getattr(self, "_spec_corruption_dumped", False) and (
+                int(nan_counts.sum().item()) > 0
+                or int(nonfinite_counts.sum().item()) > 0
             ):
                 dump_path = _dump_spec_debug(
                     debug_summary, self.method, "draft_corruption"
@@ -617,15 +614,12 @@ class SpecDecodeBaseProposer:
                 self._last_draft_probs = draft_probs.view(
                     -1, self.num_speculative_tokens, draft_probs.shape[-1]
                 ).contiguous()
-            if (
-                _spec_dump_draft_logits_enabled(self.method)
-                and not getattr(self, "_spec_logits_dumped", False)
+            if _spec_dump_draft_logits_enabled(self.method) and not getattr(
+                self, "_spec_logits_dumped", False
             ):
                 debug_summary = dict(getattr(self, "_debug_last_propose_summary", {}))
                 debug_summary["draft_token_ids"] = draft_token_ids.detach().cpu()
-                dump_path = _dump_spec_debug(
-                    debug_summary, self.method, "draft_logits"
-                )
+                dump_path = _dump_spec_debug(debug_summary, self.method, "draft_logits")
                 self._spec_logits_dumped = True
                 logger.warning(
                     "Saved %s draft logits debug to %s", self.method, dump_path
@@ -656,17 +650,14 @@ class SpecDecodeBaseProposer:
             sample_hidden_states, sampling_metadata, debug_logits
         )
         draft_probs_list = None if draft_probs is None else [draft_probs]
-        if (
-            _spec_dump_draft_logits_enabled(self.method)
-            and not getattr(self, "_spec_logits_dumped", False)
+        if _spec_dump_draft_logits_enabled(self.method) and not getattr(
+            self, "_spec_logits_dumped", False
         ):
             debug_summary = dict(getattr(self, "_debug_last_propose_summary", {}))
             debug_summary["draft_token_ids"] = draft_token_ids.detach().cpu()
             dump_path = _dump_spec_debug(debug_summary, self.method, "draft_logits")
             self._spec_logits_dumped = True
-            logger.warning(
-                "Saved %s draft logits debug to %s", self.method, dump_path
-            )
+            logger.warning("Saved %s draft logits debug to %s", self.method, dump_path)
 
         if self.allowed_attn_types is not None:
             for group_md in per_group_attn_metadata:
@@ -1825,9 +1816,7 @@ class SpecDecodeBaseProposer:
         for layer_name in self._draft_attn_layer_names:
             kv_cache_gid = layer_to_group[layer_name]
             self.draft_layer_to_kv_cache_gid[layer_name] = kv_cache_gid
-            kv_cache_spec = kv_cache_config.kv_cache_groups[
-                kv_cache_gid
-            ].kv_cache_spec
+            kv_cache_spec = kv_cache_config.kv_cache_groups[kv_cache_gid].kv_cache_spec
             layer_kv_cache_spec = kv_cache_spec
             if isinstance(layer_kv_cache_spec, UniformTypeKVCacheSpecs):
                 layer_kv_cache_spec = layer_kv_cache_spec.kv_cache_specs[layer_name]
@@ -1869,9 +1858,7 @@ class SpecDecodeBaseProposer:
         use_cudagraphs: bool = True,
     ) -> tuple[CUDAGraphMode, int, torch.Tensor | None]:
         if use_cudagraphs:
-            cudagraph_mode, batch_desc = self.cudagraph_dispatcher.dispatch(
-                num_tokens
-            )
+            cudagraph_mode, batch_desc = self.cudagraph_dispatcher.dispatch(num_tokens)
         else:
             cudagraph_mode = CUDAGraphMode.NONE
             batch_desc = BatchDescriptor(num_tokens)

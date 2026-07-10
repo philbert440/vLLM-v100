@@ -8,7 +8,6 @@ from vllm.tool_parsers.qwen3coder_tool_parser import Qwen3CoderToolParser
 
 
 class _DummyTokenizer:
-
     def get_vocab(self) -> dict[str, int]:
         return {
             "<tool_call>": 248058,
@@ -52,7 +51,7 @@ def test_qwen3coder_parser_keeps_duplicate_calls_and_typed_arguments() -> None:
         "</tool_call>"
         "<tool_call>\n"
         "<function=read>\n"
-        "<parameter=payload>\n{\"x\": 1}\n</parameter>\n"
+        '<parameter=payload>\n{"x": 1}\n</parameter>\n'
         "</function>\n"
         "</tool_call>"
     )

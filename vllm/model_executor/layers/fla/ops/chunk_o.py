@@ -22,6 +22,7 @@ from .utils import FLA_GDN_FIX_BT, check_shared_mem, is_nvidia_hopper, is_sm70
 BKV_LIST = [64, 128] if check_shared_mem() else [32, 64]
 NUM_WARPS = [2, 4] if is_nvidia_hopper else [2, 4, 8]
 
+
 def _parse_sm70_int_list(env_name: str, default_vals: list[int]) -> list[int]:
     raw = os.getenv(env_name)
     if raw is None or not raw.strip():

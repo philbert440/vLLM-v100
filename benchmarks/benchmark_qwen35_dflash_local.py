@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: Copyright contributors to the vLLM project
 import argparse
 import json
 import time
@@ -164,9 +166,7 @@ def main() -> None:
         "mode": args.mode,
         "tensor_parallel_size": args.tensor_parallel_size,
         "input_tokens": (
-            len(prompt_token_ids)
-            if prompt_token_ids is not None
-            else args.input_tokens
+            len(prompt_token_ids) if prompt_token_ids is not None else args.input_tokens
         ),
         "output_tokens": len(output.token_ids),
         "num_speculative_tokens": (

@@ -26,10 +26,7 @@ assert FLA_TRIL_PRECISION in ALLOWED_TRIL_PRECISIONS, (
 
 # SM70: reduce autotuner configs to save memory during tuning
 _tril_16x16_configs = (
-    [
-        triton.Config({}, num_warps=num_warps, num_stages=2)
-        for num_warps in [2, 4]
-    ]
+    [triton.Config({}, num_warps=num_warps, num_stages=2) for num_warps in [2, 4]]
     if is_sm70
     else [
         triton.Config({}, num_warps=num_warps, num_stages=num_stages)
@@ -38,10 +35,7 @@ _tril_16x16_configs = (
     ]
 )
 _tril_32x32_configs = (
-    [
-        triton.Config({}, num_warps=num_warps, num_stages=2)
-        for num_warps in [2, 4]
-    ]
+    [triton.Config({}, num_warps=num_warps, num_stages=2) for num_warps in [2, 4]]
     if is_sm70
     else [
         triton.Config({}, num_warps=num_warps, num_stages=num_stages)
@@ -50,10 +44,7 @@ _tril_32x32_configs = (
     ]
 )
 _tril_64x64_configs = (
-    [
-        triton.Config({}, num_warps=num_warps, num_stages=2)
-        for num_warps in [2, 4]
-    ]
+    [triton.Config({}, num_warps=num_warps, num_stages=2) for num_warps in [2, 4]]
     if is_sm70
     else [
         triton.Config({}, num_warps=num_warps, num_stages=num_stages)

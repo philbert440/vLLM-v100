@@ -7,7 +7,6 @@ from collections.abc import Iterable
 from itertools import islice
 
 import torch
-
 from torch import nn
 from transformers.activations import ACT2FN
 
@@ -547,16 +546,12 @@ class Qwen3NextGatedDeltaNet(nn.Module, MambaBase):
         # ============================================================
         # Part 1: Input Projection
         # ============================================================
-        projected_states_qkvz = _maybe_sm70_projection(
-            self.in_proj_qkvz, hidden_states
-        )
+        projected_states_qkvz = _maybe_sm70_projection(self.in_proj_qkvz, hidden_states)
         if projected_states_qkvz is None:
             projected_states_qkvz = self.in_proj_qkvz(hidden_states)
         projected_states_qkvz, _ = projected_states_qkvz
 
-        projected_states_ba = _maybe_sm70_projection(
-            self.in_proj_ba, hidden_states
-        )
+        projected_states_ba = _maybe_sm70_projection(self.in_proj_ba, hidden_states)
         if projected_states_ba is None:
             projected_states_ba = self.in_proj_ba(hidden_states)
         projected_states_ba, _ = projected_states_ba
@@ -596,8 +591,7 @@ class Qwen3NextGatedDeltaNet(nn.Module, MambaBase):
         z = z.reshape(-1, z.shape[-1])
         core_attn_out = self.norm(core_attn_out, z)
         core_attn_out = core_attn_out.reshape(z_shape_og)
-        core_attn_out = core_attn_out.reshape(
-            *core_attn_out.shape[:-2], -1)
+        core_attn_out = core_attn_out.reshape(*core_attn_out.shape[:-2], -1)
         out_proj = _maybe_sm70_projection(self.out_proj, core_attn_out)
         if out_proj is None:
             out_proj = self.out_proj(core_attn_out)
@@ -685,9 +679,7 @@ class Qwen3NextGatedDeltaNet(nn.Module, MambaBase):
                     use_qk_l2norm_in_kernel=True,
                 )
             else:
-                g_decode, beta_decode = fused_gdn_gating(
-                    self.A_log, a, b, self.dt_bias
-                )
+                g_decode, beta_decode = fused_gdn_gating(self.A_log, a, b, self.dt_bias)
                 core_attn_out_decode, _ = fused_recurrent_gated_delta_rule(
                     q=query_decode,
                     k=key_decode,
@@ -1183,9 +1175,7 @@ class Qwen3NextModel(nn.Module, EagleModelMixin):
             hidden_states = intermediate_tensors["hidden_states"]
             residual = intermediate_tensors["residual"]
 
-        aux_hidden_states = self._maybe_add_hidden_state(
-            [], 0, hidden_states, residual
-        )
+        aux_hidden_states = self._maybe_add_hidden_state([], 0, hidden_states, residual)
         for layer_idx, layer in enumerate(
             islice(self.layers, self.start_layer, self.end_layer),
             start=self.start_layer,
@@ -1315,13 +1305,13 @@ class Qwen3NextModel(nn.Module, EagleModelMixin):
         # Pre-compute layer_scale + 1 to reduce CUDA graph kernel count.
         # Eliminates per-forward dtype conversion, indexing, and scalar add.
         for layer in self.layers:
-            if getattr(layer, 'layer_scale', False):
+            if getattr(layer, "layer_scale", False):
                 with torch.no_grad():
                     # [1, 1, hidden] -> [1, hidden] for 2D decode path
                     layer._attn_scale_p1 = (
-                        layer.attn_layer_scale + 1).squeeze(0).clone()
-                    layer._ffn_scale_p1 = (
-                        layer.ffn_layer_scale + 1).squeeze(0).clone()
+                        (layer.attn_layer_scale + 1).squeeze(0).clone()
+                    )
+                    layer._ffn_scale_p1 = (layer.ffn_layer_scale + 1).squeeze(0).clone()
 
         return loaded_params
 

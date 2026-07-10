@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: Copyright contributors to the vLLM project
 """NeedleBench-style long-context quality probe for OpenAI-compatible servers."""
 
 from __future__ import annotations
@@ -61,8 +63,13 @@ def count_prompt_tokens(tokenizer: Any, messages: list[dict[str, str]]) -> int:
             encoded = encoded[0]
         return len(encoded)
     except Exception:
-        return sum(len(tokenizer.encode(m["content"], add_special_tokens=False))
-                   for m in messages) + 32
+        return (
+            sum(
+                len(tokenizer.encode(m["content"], add_special_tokens=False))
+                for m in messages
+            )
+            + 32
+        )
 
 
 def make_units(count: int) -> list[str]:
@@ -233,19 +240,24 @@ def main() -> int:
             if safe_target <= 0:
                 print(
                     json.dumps(
-                        {"event": "skip", "target_tokens": target,
-                         "reason": "target exceeds model limit"},
+                        {
+                            "event": "skip",
+                            "target_tokens": target,
+                            "reason": "target exceeds model limit",
+                        },
                         ensure_ascii=False,
                     ),
                     flush=True,
                 )
                 continue
             for depth in depths:
-                suffix = "".join(random.choices(
-                    string.ascii_uppercase + string.digits, k=8))
+                suffix = "".join(
+                    random.choices(string.ascii_uppercase + string.digits, k=8)
+                )
                 code = f"NB{safe_target}-{int(depth * 100):02d}-{suffix}"
                 messages, prompt_tokens, unit_count = fit_units_for_target(
-                    tokenizer, safe_target, depth, code)
+                    tokenizer, safe_target, depth, code
+                )
                 sample_id = f"len{safe_target}_depth{depth:.2f}"
                 print(
                     json.dumps(
@@ -307,8 +319,7 @@ def main() -> int:
                 fh.write(json.dumps(row, ensure_ascii=False) + "\n")
                 fh.flush()
                 print(
-                    json.dumps({"event": "sample_done", **row},
-                               ensure_ascii=False),
+                    json.dumps({"event": "sample_done", **row}, ensure_ascii=False),
                     flush=True,
                 )
 

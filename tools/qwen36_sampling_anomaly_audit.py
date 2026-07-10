@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: Copyright contributors to the vLLM project
 """Sampling anomaly audit for Qwen3.6 27B on V100.
 
 This is a regression harness, not a benchmark. It keeps prompts and sampling
@@ -75,8 +76,9 @@ def apply_chat(tokenizer: Any, prompt: str, enable_thinking: bool) -> str:
         )
 
 
-def build_prompts(tokenizer: Any, enable_thinking: bool,
-                  long_tokens: int) -> list[dict[str, str]]:
+def build_prompts(
+    tokenizer: Any, enable_thinking: bool, long_tokens: int
+) -> list[dict[str, str]]:
     raw = [
         {
             "id": "minimal_exact_ok_zh",
@@ -131,10 +133,13 @@ def build_prompts(tokenizer: Any, enable_thinking: bool,
             ),
         },
     ]
-    return [{
-        "id": item["id"],
-        "prompt": apply_chat(tokenizer, item["prompt"], enable_thinking),
-    } for item in raw]
+    return [
+        {
+            "id": item["id"],
+            "prompt": apply_chat(tokenizer, item["prompt"], enable_thinking),
+        }
+        for item in raw
+    ]
 
 
 def max_run(values: list[Any]) -> int:
@@ -154,7 +159,7 @@ def max_run(values: list[Any]) -> int:
 def max_ngram_count(tokens: list[int], n: int) -> int:
     if len(tokens) < n:
         return 0
-    grams = [tuple(tokens[i:i + n]) for i in range(len(tokens) - n + 1)]
+    grams = [tuple(tokens[i : i + n]) for i in range(len(tokens) - n + 1)]
     return max(collections.Counter(grams).values(), default=0)
 
 
@@ -187,6 +192,7 @@ def anomaly_metrics(text: str, token_ids: list[int]) -> dict[str, Any]:
 
 def child_main(args: argparse.Namespace) -> int:
     from transformers import AutoTokenizer
+
     from vllm import LLM, SamplingParams
 
     tokenizer = AutoTokenizer.from_pretrained(
@@ -242,29 +248,37 @@ def child_main(args: argparse.Namespace) -> int:
             token_ids = [int(token_id) for token_id in completion.token_ids]
             text = completion.text
             metrics = anomaly_metrics(text, token_ids)
-            rows.append({
-                "seed": seed,
-                "case": item["id"],
-                "prompt_tokens": len(output.prompt_token_ids),
-                "finish_reason": completion.finish_reason,
-                "stop_reason": completion.stop_reason,
-                "batch_latency_sec": batch_latency,
-                "metrics": metrics,
-                "output_prefix": normalize(text)[:600],
-                "output_text": text,
-                "output_token_ids": token_ids,
-            })
-            print(json.dumps({
-                "backend": args.backend,
-                "seed": seed,
-                "case": item["id"],
-                "flagged": metrics["flagged"],
-                "out_tokens": metrics["output_tokens"],
-                "exclamation_ratio": metrics["exclamation_ratio"],
-                "max_4gram_count": metrics["max_4gram_count"],
-                "unique_token_ratio": metrics["unique_token_ratio"],
-                "prefix": normalize(text)[:120],
-            }, ensure_ascii=False), flush=True)
+            rows.append(
+                {
+                    "seed": seed,
+                    "case": item["id"],
+                    "prompt_tokens": len(output.prompt_token_ids),
+                    "finish_reason": completion.finish_reason,
+                    "stop_reason": completion.stop_reason,
+                    "batch_latency_sec": batch_latency,
+                    "metrics": metrics,
+                    "output_prefix": normalize(text)[:600],
+                    "output_text": text,
+                    "output_token_ids": token_ids,
+                }
+            )
+            print(
+                json.dumps(
+                    {
+                        "backend": args.backend,
+                        "seed": seed,
+                        "case": item["id"],
+                        "flagged": metrics["flagged"],
+                        "out_tokens": metrics["output_tokens"],
+                        "exclamation_ratio": metrics["exclamation_ratio"],
+                        "max_4gram_count": metrics["max_4gram_count"],
+                        "unique_token_ratio": metrics["unique_token_ratio"],
+                        "prefix": normalize(text)[:120],
+                    },
+                    ensure_ascii=False,
+                ),
+                flush=True,
+            )
 
     flagged = [row for row in rows if row["metrics"]["flagged"]]
     payload = {
@@ -281,34 +295,38 @@ def child_main(args: argparse.Namespace) -> int:
             "total": len(rows),
             "flagged": len(flagged),
             "flagged_cases": [
-                {"seed": row["seed"], "case": row["case"]}
-                for row in flagged
+                {"seed": row["seed"], "case": row["case"]} for row in flagged
             ],
             "median_output_tokens": statistics.median(
-                row["metrics"]["output_tokens"] for row in rows),
+                row["metrics"]["output_tokens"] for row in rows
+            ),
         },
         "rows": rows,
     }
     args.child_output.write_text(
-        json.dumps(payload, indent=2, ensure_ascii=False), encoding="utf-8")
+        json.dumps(payload, indent=2, ensure_ascii=False), encoding="utf-8"
+    )
     return 0
 
 
-def run_child(args: argparse.Namespace, backend: str,
-              lm_head_fastpath: str, output_dir: Path) -> dict[str, Any]:
+def run_child(
+    args: argparse.Namespace, backend: str, lm_head_fastpath: str, output_dir: Path
+) -> dict[str, Any]:
     label = f"{backend}_lmhead{lm_head_fastpath}"
     child_output = output_dir / f"{label}.json"
     child_log = output_dir / f"{label}.log"
     env = os.environ.copy()
-    env.update({
-        "CUDA_DEVICE_ORDER": "PCI_BUS_ID",
-        "CUDA_VISIBLE_DEVICES": args.cuda_visible_devices,
-        "HF_HUB_OFFLINE": "1",
-        "TRANSFORMERS_OFFLINE": "1",
-        "VLLM_USE_V1": "1",
-        "VLLM_ATTENTION_BACKEND": backend,
-        "VLLM_SM70_ENABLE_LM_HEAD_FASTPATH": lm_head_fastpath,
-    })
+    env.update(
+        {
+            "CUDA_DEVICE_ORDER": "PCI_BUS_ID",
+            "CUDA_VISIBLE_DEVICES": args.cuda_visible_devices,
+            "HF_HUB_OFFLINE": "1",
+            "TRANSFORMERS_OFFLINE": "1",
+            "VLLM_USE_V1": "1",
+            "VLLM_ATTENTION_BACKEND": backend,
+            "VLLM_SM70_ENABLE_LM_HEAD_FASTPATH": lm_head_fastpath,
+        }
+    )
     cmd = [
         sys.executable,
         str(Path(__file__).resolve()),
@@ -366,7 +384,8 @@ def run_child(args: argparse.Namespace, backend: str,
         )
     if proc.returncode != 0:
         raise RuntimeError(
-            f"{label} failed with exit={proc.returncode}; see {child_log}")
+            f"{label} failed with exit={proc.returncode}; see {child_log}"
+        )
     data = json.loads(child_output.read_text(encoding="utf-8"))
     data["log_path"] = str(child_log)
     return data
@@ -389,10 +408,12 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--max-num-batched-tokens", type=int, default=8192)
     parser.add_argument("--gpu-memory-utilization", type=float, default=0.75)
     parser.add_argument("--disable-custom-all-reduce", action="store_true")
-    parser.add_argument("--disable-thinking", action="store_false",
-                        dest="enable_thinking")
-    parser.add_argument("--enable-thinking", action="store_true",
-                        dest="enable_thinking")
+    parser.add_argument(
+        "--disable-thinking", action="store_false", dest="enable_thinking"
+    )
+    parser.add_argument(
+        "--enable-thinking", action="store_true", dest="enable_thinking"
+    )
     parser.set_defaults(enable_thinking=False)
     parser.add_argument("--seeds", default="0,1,2")
     parser.add_argument("--seed", type=int, default=20260508)
@@ -414,31 +435,33 @@ def main() -> int:
         return child_main(args)
 
     output_dir = args.output_dir or Path(
-        f"/tmp/qwen36_sampling_anomaly_{time.strftime('%Y%m%d_%H%M%S')}")
+        f"/tmp/qwen36_sampling_anomaly_{time.strftime('%Y%m%d_%H%M%S')}"
+    )
     output_dir.mkdir(parents=True, exist_ok=True)
     results = {}
     for backend in [item.strip() for item in args.backends.split(",") if item.strip()]:
         for fastpath in [
-            item.strip() for item in args.lm_head_fastpaths.split(",")
-            if item.strip()
+            item.strip() for item in args.lm_head_fastpaths.split(",") if item.strip()
         ]:
             print(
-                f"running anomaly audit backend={backend} "
-                f"lm_head_fastpath={fastpath}",
+                f"running anomaly audit backend={backend} lm_head_fastpath={fastpath}",
                 flush=True,
             )
             results[f"{backend}_lmhead{fastpath}"] = run_child(
-                args, backend, fastpath, output_dir)
+                args, backend, fastpath, output_dir
+            )
 
     combined = {"results": results}
     combined_json = output_dir / "combined.json"
     combined_json.write_text(
-        json.dumps(combined, indent=2, ensure_ascii=False), encoding="utf-8")
+        json.dumps(combined, indent=2, ensure_ascii=False), encoding="utf-8"
+    )
     for label, data in results.items():
         summary = data["summary"]
         print(
             f"{label}: flagged={summary['flagged']}/{summary['total']} "
-            f"cases={summary['flagged_cases']}")
+            f"cases={summary['flagged_cases']}"
+        )
     print(f"wrote {combined_json}")
     return 0
 

@@ -631,9 +631,7 @@ def awq_gemm_sm70(
     k_ld: int,
     q_ld: int,
 ) -> torch.Tensor:
-    return torch.ops._C.awq_gemm_sm70(
-        input, qweight, scales, group_size, k_ld, q_ld
-    )
+    return torch.ops._C.awq_gemm_sm70(input, qweight, scales, group_size, k_ld, q_ld)
 
 
 def awq_gemm_sm70_out(
@@ -664,9 +662,7 @@ def fp8_gemm_sm70_out(
     k_ld: int,
     q_ld: int,
 ) -> None:
-    torch.ops._C.fp8_gemm_sm70_out(
-        out, input, qweight, scales, group_size, k_ld, q_ld
-    )
+    torch.ops._C.fp8_gemm_sm70_out(out, input, qweight, scales, group_size, k_ld, q_ld)
 
 
 def fp8_gemm_sm70_out_auto(
@@ -994,8 +990,14 @@ def awq_moe_gemm_sm70(
     group_size: int,
 ) -> torch.Tensor:
     return torch.ops._C.awq_moe_gemm_sm70(
-        sorted_input, expert_offsets, strided_ptrs_w, strided_ptrs_s,
-        num_experts, k, n, group_size,
+        sorted_input,
+        expert_offsets,
+        strided_ptrs_w,
+        strided_ptrs_s,
+        num_experts,
+        k,
+        n,
+        group_size,
     )
 
 
@@ -1105,6 +1107,8 @@ if hasattr(torch.ops._C, "fp8_moe_gemm_sm70_out"):
         gated_silu: bool,
     ) -> None:
         return None
+
+
 # gptq
 def gptq_gemm(
     a: torch.Tensor,

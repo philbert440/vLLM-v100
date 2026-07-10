@@ -55,7 +55,8 @@ class DFlashProposer(SpecDecodeBaseProposer):
         # Positions covers both context states + query states
         self.max_positions = self.max_num_tokens + self.max_query_tokens
 
-        # Separate context buffers to keep query buffer addresses stable for CUDA graphs.
+        # Separate context buffers to keep query buffer addresses stable
+        # for CUDA graphs.
         # The query-side buffers must also be able to cover cudagraph padding,
         # which can exceed the actual number of DFlash query tokens.
         self._context_slot_mapping_buffer = torch.zeros(
@@ -113,9 +114,7 @@ class DFlashProposer(SpecDecodeBaseProposer):
         self._context_slot_mapping_buffers_by_gid = {}
         for idx, gid in enumerate(self._draft_kv_cache_group_ids()):
             if idx == 0:
-                self._query_slot_mapping_buffers_by_gid[gid] = (
-                    self._slot_mapping_buffer
-                )
+                self._query_slot_mapping_buffers_by_gid[gid] = self._slot_mapping_buffer
                 self._context_slot_mapping_buffers_by_gid[gid] = (
                     self._context_slot_mapping_buffer
                 )
@@ -342,9 +341,7 @@ class DFlashProposer(SpecDecodeBaseProposer):
         new_cad_by_gid: dict[int, CommonAttentionMetadata] = {}
         for gid in self._draft_kv_cache_group_ids():
             group_cad = common_metadata_by_gid.get(gid, cad)
-            context_slot_mapping_buffer = self._context_slot_mapping_buffer_for_gid(
-                gid
-            )
+            context_slot_mapping_buffer = self._context_slot_mapping_buffer_for_gid(gid)
             query_slot_mapping_buffer = self._query_slot_mapping_buffer_for_gid(gid)
             block_size = self._dflash_block_size_by_gid.get(gid, self.block_size)
             copy_and_expand_dflash_inputs_kernel[grid](
@@ -552,9 +549,7 @@ class DFlashProposer(SpecDecodeBaseProposer):
             self._dflash_hidden_states,  # Shape is already [num_context, hidden_size]
             self._context_positions_buffer[:num_context],
             {
-                layer_name: self._context_slot_mapping_buffer_for_gid(gid)[
-                    :num_context
-                ]
+                layer_name: self._context_slot_mapping_buffer_for_gid(gid)[:num_context]
                 for layer_name, gid in self.draft_layer_to_kv_cache_gid.items()
             },
         )

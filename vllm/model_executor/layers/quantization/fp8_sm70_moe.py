@@ -155,12 +155,8 @@ class Fp8SM70MoEMethod(FusedMoEMethodBase):
         layer.w13_tm_weight = Parameter(
             torch.stack(w13_tm_weights), requires_grad=False
         )
-        layer.w13_tm_scales = Parameter(
-            torch.stack(w13_tm_scales), requires_grad=False
-        )
-        layer.w2_tm_weight = Parameter(
-            torch.stack(w2_tm_weights), requires_grad=False
-        )
+        layer.w13_tm_scales = Parameter(torch.stack(w13_tm_scales), requires_grad=False)
+        layer.w2_tm_weight = Parameter(torch.stack(w2_tm_weights), requires_grad=False)
         layer.w2_tm_scales = Parameter(torch.stack(w2_tm_scales), requires_grad=False)
 
         w13_k_ld, w13_q_ld = int(w13_meta[0][0].item()), int(w13_meta[0][1].item())
@@ -301,9 +297,7 @@ class Fp8SM70MoEMethod(FusedMoEMethodBase):
             "token_expert_indices": torch.arange(
                 total_slots, dtype=torch.int32, device=device
             ).view(num_tokens, top_k),
-            "permuted_idx": torch.empty(
-                total_slots, dtype=torch.int32, device=device
-            ),
+            "permuted_idx": torch.empty(total_slots, dtype=torch.int32, device=device),
             "m_indices": torch.empty(total_slots, dtype=torch.int32, device=device),
         }
 

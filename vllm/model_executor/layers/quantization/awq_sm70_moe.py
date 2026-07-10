@@ -149,17 +149,24 @@ class AWQSM70MoEMethod(FusedMoEMethodBase):
         extra_weight_attrs.pop("intermediate_size_full", None)
 
         w13_qweight = Parameter(
-            torch.empty(num_experts, hidden_size,
-                        2 * intermediate_size_per_partition // self.pack_factor,
-                        dtype=torch.int32),
+            torch.empty(
+                num_experts,
+                hidden_size,
+                2 * intermediate_size_per_partition // self.pack_factor,
+                dtype=torch.int32,
+            ),
             requires_grad=False,
         )
         layer.register_parameter("w13_qweight", w13_qweight)
         set_weight_attrs(w13_qweight, extra_weight_attrs)
 
         w2_qweight = Parameter(
-            torch.empty(num_experts, intermediate_size_per_partition,
-                        hidden_size // self.pack_factor, dtype=torch.int32),
+            torch.empty(
+                num_experts,
+                intermediate_size_per_partition,
+                hidden_size // self.pack_factor,
+                dtype=torch.int32,
+            ),
             requires_grad=False,
         )
         layer.register_parameter("w2_qweight", w2_qweight)
@@ -169,33 +176,43 @@ class AWQSM70MoEMethod(FusedMoEMethodBase):
         num_groups_w2 = intermediate_size_per_partition // self.group_size
 
         w13_scales = Parameter(
-            torch.empty(num_experts, num_groups_w13,
-                        intermediate_size_per_partition * 2, dtype=params_dtype),
+            torch.empty(
+                num_experts,
+                num_groups_w13,
+                intermediate_size_per_partition * 2,
+                dtype=params_dtype,
+            ),
             requires_grad=False,
         )
         layer.register_parameter("w13_scales", w13_scales)
         set_weight_attrs(w13_scales, extra_weight_attrs)
 
         w2_scales = Parameter(
-            torch.empty(num_experts, num_groups_w2, hidden_size,
-                        dtype=params_dtype),
+            torch.empty(num_experts, num_groups_w2, hidden_size, dtype=params_dtype),
             requires_grad=False,
         )
         layer.register_parameter("w2_scales", w2_scales)
         set_weight_attrs(w2_scales, extra_weight_attrs)
 
         w13_qzeros = Parameter(
-            torch.empty(num_experts, num_groups_w13,
-                        2 * intermediate_size_per_partition // self.pack_factor,
-                        dtype=torch.int32),
+            torch.empty(
+                num_experts,
+                num_groups_w13,
+                2 * intermediate_size_per_partition // self.pack_factor,
+                dtype=torch.int32,
+            ),
             requires_grad=False,
         )
         layer.register_parameter("w13_qzeros", w13_qzeros)
         set_weight_attrs(w13_qzeros, extra_weight_attrs)
 
         w2_qzeros = Parameter(
-            torch.empty(num_experts, num_groups_w2,
-                        hidden_size // self.pack_factor, dtype=torch.int32),
+            torch.empty(
+                num_experts,
+                num_groups_w2,
+                hidden_size // self.pack_factor,
+                dtype=torch.int32,
+            ),
             requires_grad=False,
         )
         layer.register_parameter("w2_qzeros", w2_qzeros)
@@ -220,14 +237,12 @@ class AWQSM70MoEMethod(FusedMoEMethodBase):
         )
         aligned_intermediate_size = w13_aligned_out // 2
 
-        layer.w2_qweight, layer.w2_scales, layer.w2_qzeros, _ = (
-            _align_awq_input_dim(
-                layer.w2_qweight,
-                layer.w2_scales,
-                layer.w2_qzeros,
-                self.group_size,
-                align,
-            )
+        layer.w2_qweight, layer.w2_scales, layer.w2_qzeros, _ = _align_awq_input_dim(
+            layer.w2_qweight,
+            layer.w2_scales,
+            layer.w2_qzeros,
+            self.group_size,
+            align,
         )
         layer.w2_qweight, layer.w2_scales, layer.w2_qzeros, hidden_aligned_size = (
             _align_awq_output_dim(
@@ -266,28 +281,32 @@ class AWQSM70MoEMethod(FusedMoEMethodBase):
 
         for e in range(num_experts):
             r13 = ops.awq_sm70_prepare(
-                layer.w13_qweight[e], layer.w13_scales[e],
-                layer.w13_qzeros[e], self.group_size,
-                interleave_gated_silu=True)
+                layer.w13_qweight[e],
+                layer.w13_scales[e],
+                layer.w13_qzeros[e],
+                self.group_size,
+                interleave_gated_silu=True,
+            )
             w13_tm_weights.append(r13[0])
             w13_tm_scales.append(r13[1])
             w13_meta.append(r13[2])
 
             r2 = ops.awq_sm70_prepare(
-                layer.w2_qweight[e], layer.w2_scales[e],
-                layer.w2_qzeros[e], self.group_size)
+                layer.w2_qweight[e],
+                layer.w2_scales[e],
+                layer.w2_qzeros[e],
+                self.group_size,
+            )
             w2_tm_weights.append(r2[0])
             w2_tm_scales.append(r2[1])
             w2_meta.append(r2[2])
 
         layer.w13_tm_weight = Parameter(
-            torch.stack(w13_tm_weights), requires_grad=False)
-        layer.w13_tm_scales = Parameter(
-            torch.stack(w13_tm_scales), requires_grad=False)
-        layer.w2_tm_weight = Parameter(
-            torch.stack(w2_tm_weights), requires_grad=False)
-        layer.w2_tm_scales = Parameter(
-            torch.stack(w2_tm_scales), requires_grad=False)
+            torch.stack(w13_tm_weights), requires_grad=False
+        )
+        layer.w13_tm_scales = Parameter(torch.stack(w13_tm_scales), requires_grad=False)
+        layer.w2_tm_weight = Parameter(torch.stack(w2_tm_weights), requires_grad=False)
+        layer.w2_tm_scales = Parameter(torch.stack(w2_tm_scales), requires_grad=False)
 
         # Cache meta as CPU ints (zero-cost at inference)
         layer.w13_meta_list = [
@@ -314,35 +333,37 @@ class AWQSM70MoEMethod(FusedMoEMethodBase):
         w2_k_ld, w2_q_ld = layer.w2_meta_list[0]
         try:
             w13_ptrs = ops.awq_moe_build_strided_ptrs(
-                layer.w13_tm_weight, layer.w13_tm_scales,
-                w13_k_ld, w13_q_ld, num_experts)
+                layer.w13_tm_weight,
+                layer.w13_tm_scales,
+                w13_k_ld,
+                w13_q_ld,
+                num_experts,
+            )
             w2_ptrs = ops.awq_moe_build_strided_ptrs(
-                layer.w2_tm_weight, layer.w2_tm_scales,
-                w2_k_ld, w2_q_ld, num_experts)
-            layer.w13_strided_ptrs_w = Parameter(
-                w13_ptrs[0], requires_grad=False)
-            layer.w13_strided_ptrs_s = Parameter(
-                w13_ptrs[1], requires_grad=False)
-            layer.w2_strided_ptrs_w = Parameter(
-                w2_ptrs[0], requires_grad=False)
-            layer.w2_strided_ptrs_s = Parameter(
-                w2_ptrs[1], requires_grad=False)
+                layer.w2_tm_weight, layer.w2_tm_scales, w2_k_ld, w2_q_ld, num_experts
+            )
+            layer.w13_strided_ptrs_w = Parameter(w13_ptrs[0], requires_grad=False)
+            layer.w13_strided_ptrs_s = Parameter(w13_ptrs[1], requires_grad=False)
+            layer.w2_strided_ptrs_w = Parameter(w2_ptrs[0], requires_grad=False)
+            layer.w2_strided_ptrs_s = Parameter(w2_ptrs[1], requires_grad=False)
             layer.w13_strided_ptrs_w_rows = layer.w13_strided_ptrs_w.view(
-                num_experts, -1)
+                num_experts, -1
+            )
             layer.w13_strided_ptrs_s_rows = layer.w13_strided_ptrs_s.view(
-                num_experts, -1)
-            layer.w2_strided_ptrs_w_rows = layer.w2_strided_ptrs_w.view(
-                num_experts, -1)
-            layer.w2_strided_ptrs_s_rows = layer.w2_strided_ptrs_s.view(
-                num_experts, -1)
+                num_experts, -1
+            )
+            layer.w2_strided_ptrs_w_rows = layer.w2_strided_ptrs_w.view(num_experts, -1)
+            layer.w2_strided_ptrs_s_rows = layer.w2_strided_ptrs_s.view(num_experts, -1)
             layer.sm70_ptr_row_bytes = layer.w13_strided_ptrs_w_rows.shape[1]
             layer.sm70_batched_ready = True
-            logger.info_once("SM70 MoE: batched GEMM enabled (%d experts)",
-                             num_experts)
+            logger.info_once("SM70 MoE: batched GEMM enabled (%d experts)", num_experts)
         except Exception as e:
             layer.sm70_batched_ready = False
-            logger.warning("SM70 MoE: batched GEMM unavailable (%s), "
-                           "using per-expert loop fallback.", e)
+            logger.warning(
+                "SM70 MoE: batched GEMM unavailable (%s), "
+                "using per-expert loop fallback.",
+                e,
+            )
 
         # --- Pre-allocate a small persistent decode workspace ---
         top_k = self.moe.experts_per_token
@@ -352,59 +373,74 @@ class AWQSM70MoEMethod(FusedMoEMethodBase):
         layer._buf_max_slots = max_slots
         layer._buf_top_k = top_k
         layer._buf_expert_counts = torch.empty(
-            num_experts, dtype=torch.int32, device=device)
+            num_experts, dtype=torch.int32, device=device
+        )
         layer._buf_expert_offsets = torch.empty(
-            num_experts + 1, dtype=torch.int32, device=device)
+            num_experts + 1, dtype=torch.int32, device=device
+        )
         layer._buf_expert_offsets64 = torch.empty(
-            num_experts + 1, dtype=torch.int64, device=device)
+            num_experts + 1, dtype=torch.int64, device=device
+        )
         layer._buf_gate_up = torch.empty(
-            max_slots, layer.sm70_w13_n_dim, dtype=torch.float16, device=device)
+            max_slots, layer.sm70_w13_n_dim, dtype=torch.float16, device=device
+        )
         layer._buf_intermediate = torch.empty(
-            max_slots, intermediate_size, dtype=torch.float16, device=device)
+            max_slots, intermediate_size, dtype=torch.float16, device=device
+        )
         layer._buf_permuted_input = torch.empty(
-            max_slots, hidden_size, dtype=torch.float16, device=device)
+            max_slots, hidden_size, dtype=torch.float16, device=device
+        )
         layer._buf_sorted_output = torch.empty(
-            max_slots, hidden_size, dtype=torch.float16, device=device)
+            max_slots, hidden_size, dtype=torch.float16, device=device
+        )
         layer._buf_inv_permuted_idx = torch.empty(
-            persistent_tokens, top_k, dtype=torch.int32, device=device)
+            persistent_tokens, top_k, dtype=torch.int32, device=device
+        )
         layer._buf_topk_ids_i32 = torch.empty(
-            persistent_tokens, top_k, dtype=torch.int32, device=device)
+            persistent_tokens, top_k, dtype=torch.int32, device=device
+        )
         layer._buf_token_expert_indices = torch.arange(
-            max_slots, dtype=torch.int32, device=device).view(
-                persistent_tokens, top_k)
+            max_slots, dtype=torch.int32, device=device
+        ).view(persistent_tokens, top_k)
         layer._buf_permuted_idx = torch.empty(
-            max_slots, dtype=torch.int32, device=device)
-        layer._buf_m_indices = torch.empty(
-            max_slots, dtype=torch.int32, device=device)
+            max_slots, dtype=torch.int32, device=device
+        )
+        layer._buf_m_indices = torch.empty(max_slots, dtype=torch.int32, device=device)
         layer._buf_output = torch.empty(
-            persistent_tokens, hidden_size, dtype=torch.float16,
-            device=device)
+            persistent_tokens, hidden_size, dtype=torch.float16, device=device
+        )
         layer._buf_single_topk_ids_i64 = torch.empty(
-            top_k, dtype=torch.int64, device=device)
+            top_k, dtype=torch.int64, device=device
+        )
         layer._buf_single_w13_ptrs_w = torch.empty(
-            top_k, layer.sm70_ptr_row_bytes, dtype=torch.uint8, device=device)
+            top_k, layer.sm70_ptr_row_bytes, dtype=torch.uint8, device=device
+        )
         layer._buf_single_w13_ptrs_s = torch.empty(
-            top_k, layer.sm70_ptr_row_bytes, dtype=torch.uint8, device=device)
+            top_k, layer.sm70_ptr_row_bytes, dtype=torch.uint8, device=device
+        )
         layer._buf_single_w2_ptrs_w = torch.empty(
-            top_k, layer.sm70_ptr_row_bytes, dtype=torch.uint8, device=device)
+            top_k, layer.sm70_ptr_row_bytes, dtype=torch.uint8, device=device
+        )
         layer._buf_single_w2_ptrs_s = torch.empty(
-            top_k, layer.sm70_ptr_row_bytes, dtype=torch.uint8, device=device)
+            top_k, layer.sm70_ptr_row_bytes, dtype=torch.uint8, device=device
+        )
         layer._buf_single_expert_offsets = torch.arange(
-            top_k + 1, dtype=torch.int32, device=device)
+            top_k + 1, dtype=torch.int32, device=device
+        )
         layer._buf_single_expert_offsets64 = torch.arange(
-            top_k + 1, dtype=torch.int64, device=device)
+            top_k + 1, dtype=torch.int64, device=device
+        )
         layer._buf_single_inv_permuted_idx = torch.arange(
-            top_k, dtype=torch.int32, device=device).view(1, top_k)
+            top_k, dtype=torch.int32, device=device
+        ).view(1, top_k)
 
         # Free original weights
         del layer.w13_qweight, layer.w13_scales, layer.w13_qzeros
         del layer.w2_qweight, layer.w2_scales, layer.w2_qzeros
 
-    def _get_buffers(self, layer: torch.nn.Module, total_slots: int,
-                     num_tokens: int):
+    def _get_buffers(self, layer: torch.nn.Module, total_slots: int, num_tokens: int):
         """Use persistent decode buffers when they fit, otherwise temp ones."""
-        if (total_slots <= layer._buf_max_slots
-                and num_tokens <= layer._buf_max_tokens):
+        if total_slots <= layer._buf_max_slots and num_tokens <= layer._buf_max_tokens:
             return {
                 "output": layer._buf_output[:num_tokens],
                 "permuted_input": layer._buf_permuted_input[:total_slots],
@@ -415,8 +451,7 @@ class AWQSM70MoEMethod(FusedMoEMethodBase):
                 "expert_offsets64": layer._buf_expert_offsets64,
                 "inv_permuted_idx": layer._buf_inv_permuted_idx[:num_tokens],
                 "topk_ids_i32": layer._buf_topk_ids_i32[:num_tokens],
-                "token_expert_indices":
-                layer._buf_token_expert_indices[:num_tokens],
+                "token_expert_indices": layer._buf_token_expert_indices[:num_tokens],
                 "permuted_idx": layer._buf_permuted_idx[:total_slots],
                 "m_indices": layer._buf_m_indices[:total_slots],
             }
@@ -425,49 +460,41 @@ class AWQSM70MoEMethod(FusedMoEMethodBase):
         top_k = layer._buf_top_k
         hidden_size = layer.sm70_hidden_logical_size
         return {
-            "output": torch.empty(num_tokens,
-                                   hidden_size,
-                                   dtype=torch.float16,
-                                   device=device),
-            "permuted_input": torch.empty(total_slots,
-                                           hidden_size,
-                                           dtype=torch.float16,
-                                           device=device),
-            "sorted_output": torch.empty(total_slots,
-                                          hidden_size,
-                                          dtype=torch.float16,
-                                          device=device),
-            "gate_up": torch.empty(total_slots,
-                                    layer.sm70_w13_n_dim,
-                                    dtype=torch.float16,
-                                    device=device),
-            "intermediate": torch.empty(total_slots,
-                                         layer.sm70_intermediate_size,
-                                         dtype=torch.float16,
-                                         device=device),
-            "expert_offsets": torch.empty(layer.sm70_num_experts + 1,
-                                           dtype=torch.int32,
-                                           device=device),
-            "expert_offsets64": torch.empty(layer.sm70_num_experts + 1,
-                                             dtype=torch.int64,
-                                             device=device),
-            "inv_permuted_idx": torch.empty(num_tokens,
-                                             top_k,
-                                             dtype=torch.int32,
-                                             device=device),
-            "topk_ids_i32": torch.empty(num_tokens,
-                                         top_k,
-                                         dtype=torch.int32,
-                                         device=device),
+            "output": torch.empty(
+                num_tokens, hidden_size, dtype=torch.float16, device=device
+            ),
+            "permuted_input": torch.empty(
+                total_slots, hidden_size, dtype=torch.float16, device=device
+            ),
+            "sorted_output": torch.empty(
+                total_slots, hidden_size, dtype=torch.float16, device=device
+            ),
+            "gate_up": torch.empty(
+                total_slots, layer.sm70_w13_n_dim, dtype=torch.float16, device=device
+            ),
+            "intermediate": torch.empty(
+                total_slots,
+                layer.sm70_intermediate_size,
+                dtype=torch.float16,
+                device=device,
+            ),
+            "expert_offsets": torch.empty(
+                layer.sm70_num_experts + 1, dtype=torch.int32, device=device
+            ),
+            "expert_offsets64": torch.empty(
+                layer.sm70_num_experts + 1, dtype=torch.int64, device=device
+            ),
+            "inv_permuted_idx": torch.empty(
+                num_tokens, top_k, dtype=torch.int32, device=device
+            ),
+            "topk_ids_i32": torch.empty(
+                num_tokens, top_k, dtype=torch.int32, device=device
+            ),
             "token_expert_indices": torch.arange(
-                total_slots, dtype=torch.int32, device=device).view(
-                    num_tokens, top_k),
-            "permuted_idx": torch.empty(total_slots,
-                                         dtype=torch.int32,
-                                         device=device),
-            "m_indices": torch.empty(total_slots,
-                                      dtype=torch.int32,
-                                      device=device),
+                total_slots, dtype=torch.int32, device=device
+            ).view(num_tokens, top_k),
+            "permuted_idx": torch.empty(total_slots, dtype=torch.int32, device=device),
+            "m_indices": torch.empty(total_slots, dtype=torch.int32, device=device),
         }
 
     def apply(
@@ -490,9 +517,7 @@ class AWQSM70MoEMethod(FusedMoEMethodBase):
                 compact_out = self._apply_single_token_compact(
                     layer, x, topk_weights, topk_ids
                 )
-                batched_out = self._apply_batched(
-                    layer, x, topk_weights, topk_ids
-                )
+                batched_out = self._apply_batched(layer, x, topk_weights, topk_ids)
                 diff = (compact_out - batched_out).abs()
                 max_diff = float(diff.max().item())
                 if max_diff != 0.0:
@@ -515,8 +540,7 @@ class AWQSM70MoEMethod(FusedMoEMethodBase):
                 logger.info_once(
                     "SM70 compact compare is skipped during CUDA graph capture."
                 )
-            return self._apply_single_token_compact(
-                layer, x, topk_weights, topk_ids)
+            return self._apply_single_token_compact(layer, x, topk_weights, topk_ids)
         if getattr(layer, "sm70_batched_ready", False):
             return self._apply_batched(layer, x, topk_weights, topk_ids)
         return self._apply_sorted_loop(layer, x, topk_weights, topk_ids)
@@ -586,7 +610,6 @@ class AWQSM70MoEMethod(FusedMoEMethodBase):
         buffers: dict[str, torch.Tensor],
     ):
         """Permute tokens by expert using the native MoE CUDA kernels."""
-        num_tokens = x.shape[0]
         top_k = topk_ids.shape[1]
 
         permuted_input = buffers["permuted_input"]
@@ -635,9 +658,9 @@ class AWQSM70MoEMethod(FusedMoEMethodBase):
         if total_slots == 0:
             return output
 
-        (permuted_input, expert_offsets64,
-         inv_permuted_idx) = self._permute_tokens_by_expert(
-            layer, x, topk_ids, num_experts, buffers)
+        (permuted_input, expert_offsets64, inv_permuted_idx) = (
+            self._permute_tokens_by_expert(layer, x, topk_ids, num_experts, buffers)
+        )
         expert_offsets = buffers["expert_offsets"]
         intermediate = buffers["intermediate"]
         sorted_output = buffers["sorted_output"]
@@ -645,20 +668,28 @@ class AWQSM70MoEMethod(FusedMoEMethodBase):
         # Batched w13 GEMM (gate+up) — write into a pre-allocated buffer.
         ops.awq_moe_gemm_sm70_out(
             intermediate,
-            permuted_input, expert_offsets,
-            layer.w13_strided_ptrs_w, layer.w13_strided_ptrs_s,
-            num_experts, layer.sm70_w13_k_dim,
-            layer.sm70_w13_n_dim, self.group_size,
+            permuted_input,
+            expert_offsets,
+            layer.w13_strided_ptrs_w,
+            layer.w13_strided_ptrs_s,
+            num_experts,
+            layer.sm70_w13_k_dim,
+            layer.sm70_w13_n_dim,
+            self.group_size,
             True,
         )
 
         # Batched w2 GEMM (down projection) — write into a pre-allocated buffer.
         ops.awq_moe_gemm_sm70_out(
             sorted_output,
-            intermediate, expert_offsets,
-            layer.w2_strided_ptrs_w, layer.w2_strided_ptrs_s,
-            num_experts, layer.sm70_w2_k_dim,
-            layer.sm70_w2_n_dim, self.group_size,
+            intermediate,
+            expert_offsets,
+            layer.w2_strided_ptrs_w,
+            layer.w2_strided_ptrs_s,
+            num_experts,
+            layer.sm70_w2_k_dim,
+            layer.sm70_w2_n_dim,
+            self.group_size,
         )
         sorted_output_logical = sorted_output[:, : layer.sm70_hidden_logical_size]
         torch.ops._moe_C.moe_unpermute(
@@ -694,7 +725,10 @@ class AWQSM70MoEMethod(FusedMoEMethodBase):
         flat_weights = topk_weights.view(-1)
         token_origin = (
             torch.arange(num_tokens, device=x.device, dtype=torch.int64)
-            .unsqueeze(1).expand(num_tokens, top_k).reshape(-1))
+            .unsqueeze(1)
+            .expand(num_tokens, top_k)
+            .reshape(-1)
+        )
 
         sorted_order = torch.argsort(flat_ids.long(), stable=True)
         sorted_token_origin = token_origin[sorted_order]
@@ -702,10 +736,10 @@ class AWQSM70MoEMethod(FusedMoEMethodBase):
         sorted_input = x[sorted_token_origin]
 
         sorted_expert_ids = flat_ids[sorted_order]
-        expert_counts = torch.bincount(
-            sorted_expert_ids.long(), minlength=num_experts)
+        expert_counts = torch.bincount(sorted_expert_ids.long(), minlength=num_experts)
         expert_offsets = torch.zeros(
-            num_experts + 1, dtype=torch.int64, device=x.device)
+            num_experts + 1, dtype=torch.int64, device=x.device
+        )
         torch.cumsum(expert_counts, dim=0, out=expert_offsets[1:])
 
         # Optimization: Single CPU sync for all offsets at once
@@ -714,7 +748,8 @@ class AWQSM70MoEMethod(FusedMoEMethodBase):
         h_counts = expert_counts.cpu().numpy()
 
         sorted_output = torch.empty(
-            total_slots, layer.sm70_w2_n_dim, dtype=x.dtype, device=x.device)
+            total_slots, layer.sm70_w2_n_dim, dtype=x.dtype, device=x.device
+        )
 
         for e in range(num_experts):
             # Use pre-synced numpy arrays (no additional sync)
@@ -726,8 +761,11 @@ class AWQSM70MoEMethod(FusedMoEMethodBase):
 
             w13_k_ld, w13_q_ld = layer.w13_meta_list[e]
             intermediate = torch.empty(
-                end - start, layer.sm70_intermediate_size,
-                dtype=x.dtype, device=x.device)
+                end - start,
+                layer.sm70_intermediate_size,
+                dtype=x.dtype,
+                device=x.device,
+            )
             ops.awq_gemm_sm70_out(
                 intermediate,
                 expert_input,

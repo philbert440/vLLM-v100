@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: Copyright contributors to the vLLM project
 """Live Qwen3.6 prefix-cache + MTP serving regression.
 
 This script talks to an already running OpenAI-compatible vLLM server.  It is
@@ -63,9 +64,7 @@ def parse_args() -> argparse.Namespace:
 
 
 def output_dir() -> Path:
-    return Path("bench_results/qwen36_prefix_mtp_live") / time.strftime(
-        "%Y%m%d-%H%M%S"
-    )
+    return Path("bench_results/qwen36_prefix_mtp_live") / time.strftime("%Y%m%d-%H%M%S")
 
 
 def request_json(
@@ -492,7 +491,8 @@ def grade_case(case: Case, result: dict[str, Any]) -> dict[str, Any]:
             fn = tool_calls[0].get("function") or {}
             if fn.get("name") != case.expected_tool:
                 failures.append(
-                    f"tool name mismatch: expected {case.expected_tool}, got {fn.get('name')}"
+                    f"tool name mismatch: expected {case.expected_tool}, "
+                    f"got {fn.get('name')}"
                 )
             if case.expected_tool_args and not arg_matches(
                 case.expected_tool_args, parse_tool_args(tool_calls[0])
@@ -505,8 +505,10 @@ def grade_case(case: Case, result: dict[str, Any]) -> dict[str, Any]:
         failures.append(f"unexpected tool_calls: {tool_calls}")
     if result.get("metrics", {}).get("flagged"):
         failures.append(f"anomaly metrics flagged: {result['metrics']}")
-    corrupted = result.get("metric_delta", {}).get("values", {}).get(
-        "vllm:corrupted_requests_total", 0.0
+    corrupted = (
+        result.get("metric_delta", {})
+        .get("values", {})
+        .get("vllm:corrupted_requests_total", 0.0)
     )
     if corrupted:
         failures.append(f"corrupted request metric increased by {corrupted}")
@@ -721,12 +723,8 @@ def run_quality(args: argparse.Namespace, tokenizer: Any) -> list[dict[str, Any]
                     "completion_tokens": result.get("usage", {}).get(
                         "completion_tokens"
                     ),
-                    "accept_len": result["metric_delta"].get(
-                        "spec_acceptance_length"
-                    ),
-                    "prefix_hit_ratio": result["metric_delta"].get(
-                        "prefix_hit_ratio"
-                    ),
+                    "accept_len": result["metric_delta"].get("spec_acceptance_length"),
+                    "prefix_hit_ratio": result["metric_delta"].get("prefix_hit_ratio"),
                     "failures": result["grade"]["failures"],
                     "prefix": result["content_prefix"][:120],
                 },
@@ -801,9 +799,7 @@ def run_speed(args: argparse.Namespace, tokenizer: Any) -> list[dict[str, Any]]:
                     {
                         "phase": "speed",
                         "case": case.case_id,
-                        "prompt_tokens": result.get("usage", {}).get(
-                            "prompt_tokens"
-                        ),
+                        "prompt_tokens": result.get("usage", {}).get("prompt_tokens"),
                         "completion_tokens": result.get("usage", {}).get(
                             "completion_tokens"
                         ),
@@ -840,7 +836,9 @@ def run_speed(args: argparse.Namespace, tokenizer: Any) -> list[dict[str, Any]]:
     return rows
 
 
-def summarize(speed_rows: list[dict[str, Any]], quality_rows: list[dict[str, Any]]) -> dict[str, Any]:
+def summarize(
+    speed_rows: list[dict[str, Any]], quality_rows: list[dict[str, Any]]
+) -> dict[str, Any]:
     failed_quality = [
         row["case_id"]
         for row in quality_rows
@@ -907,7 +905,13 @@ def main() -> None:
     (out_dir / "summary.json").write_text(
         json.dumps(summary, indent=2, ensure_ascii=False), encoding="utf-8"
     )
-    print(json.dumps({"result_dir": str(out_dir), **summary["summary"]}, ensure_ascii=False, indent=2))
+    print(
+        json.dumps(
+            {"result_dir": str(out_dir), **summary["summary"]},
+            ensure_ascii=False,
+            indent=2,
+        )
+    )
 
 
 if __name__ == "__main__":

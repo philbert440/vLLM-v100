@@ -2,8 +2,8 @@
 # SPDX-FileCopyrightText: Copyright contributors to the vLLM project
 """Backend for GatedDeltaNet attention."""
 
-from dataclasses import dataclass
 import os
+from dataclasses import dataclass
 
 import torch
 
@@ -17,7 +17,6 @@ from vllm.v1.attention.backend import (
 )
 from vllm.v1.attention.backends.utils import (
     NULL_BLOCK_ID,
-    PAD_SLOT_ID,
     compute_causal_conv1d_metadata,
     mamba_get_block_table_tensor,
     split_decodes_and_prefills,
@@ -235,9 +234,11 @@ class GDNAttentionMetadataBuilder(AttentionMetadataBuilder[GDNAttentionMetadata]
                 spec_sequence_masks_cpu = None
             else:
                 if num_decode_draft_tokens_cpu is not None:
-                    num_spec_draft_tokens = num_decode_draft_tokens_cpu[
-                        spec_sequence_masks_cpu
-                    ].sum().item()
+                    num_spec_draft_tokens = (
+                        num_decode_draft_tokens_cpu[spec_sequence_masks_cpu]
+                        .sum()
+                        .item()
+                    )
                     if num_spec_draft_tokens == 0:
                         spec_sequence_masks = None
                         num_spec_decodes = 0

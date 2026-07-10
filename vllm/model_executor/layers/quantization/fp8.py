@@ -45,13 +45,13 @@ from vllm.model_executor.layers.quantization.base_config import (
     QuantizationConfig,
     QuantizeMethodBase,
 )
+from vllm.model_executor.layers.quantization.fp8_sm70_moe import (
+    Fp8SM70MoEMethod,
+)
 from vllm.model_executor.layers.quantization.kernels.scaled_mm import (
     init_fp8_linear_kernel,
 )
 from vllm.model_executor.layers.quantization.kv_cache import BaseKVCacheMethod
-from vllm.model_executor.layers.quantization.fp8_sm70_moe import (
-    Fp8SM70MoEMethod,
-)
 from vllm.model_executor.layers.quantization.utils.flashinfer_utils import (
     apply_fi_trtllm_fp8_per_tensor_moe,
 )
@@ -478,8 +478,7 @@ class Fp8LinearMethod(LinearMethodBase):
                 layer.input_scale = None
                 layer.sm70_fp8_turbomind = True
                 layer.sm70_fp8_group_size = self.weight_block_size[0]
-                layer.register_buffer(
-                    "sm70_fp8_meta", meta, persistent=False)
+                layer.register_buffer("sm70_fp8_meta", meta, persistent=False)
                 layer.sm70_fp8_k_ld = int(meta[0].item())
                 layer.sm70_fp8_q_ld = int(meta[1].item())
                 logger.warning_once(
@@ -1083,16 +1082,12 @@ class Fp8MoEMethod(FusedMoEMethodBase):
                 w13 = self._dequantize_block_moe_weight(
                     w13, w13_scale, layer.orig_dtype
                 )
-                w2 = self._dequantize_block_moe_weight(
-                    w2, w2_scale, layer.orig_dtype
-                )
+                w2 = self._dequantize_block_moe_weight(w2, w2_scale, layer.orig_dtype)
             else:
                 w13 = self._dequantize_tensor_moe_weight(
                     w13, w13_scale, layer.orig_dtype
                 )
-                w2 = self._dequantize_tensor_moe_weight(
-                    w2, w2_scale, layer.orig_dtype
-                )
+                w2 = self._dequantize_tensor_moe_weight(w2, w2_scale, layer.orig_dtype)
             replace_parameter(layer, "w13_weight", w13)
             replace_parameter(layer, "w2_weight", w2)
             self._fallback_unquantized_method._setup_kernel(

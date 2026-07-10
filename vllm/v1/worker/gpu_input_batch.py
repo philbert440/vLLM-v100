@@ -745,9 +745,9 @@ class InputBatch:
             self.num_accepted_tokens_cpu[empty_index] = self.num_accepted_tokens_cpu[
                 last_req_index
             ]
-            self.spec_num_accepted_tokens_cpu[
-                empty_index
-            ] = self.spec_num_accepted_tokens_cpu[last_req_index]
+            self.spec_num_accepted_tokens_cpu[empty_index] = (
+                self.spec_num_accepted_tokens_cpu[last_req_index]
+            )
             generator = self.generators.pop(last_req_index, None)
             if generator is not None:
                 self.generators[empty_index] = generator

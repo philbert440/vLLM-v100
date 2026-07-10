@@ -1,4 +1,5 @@
 # SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: Copyright contributors to the vLLM project
 # SM70 (V100) WNA16 kernel for compressed-tensors and legacy-AWQ formats.
 #
 # Reads pack-quantized weights at load time, transcodes to legacy AWQ pack
@@ -44,7 +45,8 @@ def _awq_pack_last_dim(unpacked: torch.Tensor) -> torch.Tensor:
 
 
 def _ct_qweight_to_awq(ct_q: torch.Tensor) -> torch.Tensor:
-    """CT [N, K/8] (sequential pack along K) -> AWQ [K, N/8] (interleave pack along N)."""
+    """CT [N, K/8] (sequential pack along K) -> AWQ [K, N/8]
+    (interleave pack along N)."""
     n, k_div_8 = ct_q.shape
     k = k_div_8 * 8
     unpacked = torch.empty(n, k, dtype=torch.uint8, device=ct_q.device)
@@ -80,32 +82,37 @@ class SM70TurboMindLinearKernel(MPLinearKernel):
     @classmethod
     def can_implement(cls, c: MPLinearLayerConfig) -> tuple[bool, str | None]:
         if not current_platform.is_cuda_alike():
-            return False, 'SM70TurboMind requires CUDA'
+            return False, "SM70TurboMind requires CUDA"
         if c.act_type != torch.float16:
-            return False, 'SM70TurboMind requires float16 activations'
+            return False, "SM70TurboMind requires float16 activations"
         if c.weight_type not in cls.SUPPORTED_QUANT_TYPES:
-            return (False,
-                    f'SM70TurboMind: weight type {c.weight_type} not supported'
-                    f' (need {cls.SUPPORTED_QUANT_TYPES})')
+            return (
+                False,
+                f"SM70TurboMind: weight type {c.weight_type} not supported"
+                f" (need {cls.SUPPORTED_QUANT_TYPES})",
+            )
         if c.group_size not in cls.SUPPORTED_GROUP_SIZES:
-            return (False,
-                    f'SM70TurboMind: group_size={c.group_size} not in '
-                    f'{cls.SUPPORTED_GROUP_SIZES}')
+            return (
+                False,
+                f"SM70TurboMind: group_size={c.group_size} not in "
+                f"{cls.SUPPORTED_GROUP_SIZES}",
+            )
         k_part, n_part = c.partition_weight_shape
         if k_part % 8 != 0 or n_part % 8 != 0:
-            return False, 'SM70TurboMind: K and N must be multiples of 8'
+            return False, "SM70TurboMind: K and N must be multiples of 8"
         if k_part % c.group_size != 0:
-            return (False,
-                    f'SM70TurboMind: K={k_part} not divisible by '
-                    f'group_size={c.group_size}')
+            return (
+                False,
+                f"SM70TurboMind: K={k_part} not divisible by group_size={c.group_size}",
+            )
         if c.has_g_idx:
-            return False, 'SM70TurboMind: act-reorder (g_idx) not supported'
-        if not hasattr(torch.ops._C, 'awq_sm70_prepare'):
-            return False, 'SM70TurboMind: awq_sm70_prepare op missing'
+            return False, "SM70TurboMind: act-reorder (g_idx) not supported"
+        if not hasattr(torch.ops._C, "awq_sm70_prepare"):
+            return False, "SM70TurboMind: awq_sm70_prepare op missing"
         # Only run on actual SM70 hardware - SM75+ should pick a faster kernel
         cap = current_platform.get_device_capability()
         if cap is None or not (cap[0] == 7 and cap[1] == 0):
-            return False, 'SM70TurboMind: only used on V100 (CC 7.0)'
+            return False, "SM70TurboMind: only used on V100 (CC 7.0)"
         return True, None
 
     def process_weights_after_loading(self, layer: torch.nn.Module) -> None:
@@ -115,36 +122,48 @@ class SM70TurboMindLinearKernel(MPLinearKernel):
 
         ct_q = getattr(layer, self.w_q_name).data
         ct_s = getattr(layer, self.w_s_name).data
-        ct_zp = (getattr(layer, self.w_zp_name).data
-                 if c.zero_points and self.w_zp_name else None)
+        ct_zp = (
+            getattr(layer, self.w_zp_name).data
+            if c.zero_points and self.w_zp_name
+            else None
+        )
         device = ct_q.device
 
         assert ct_q.shape == (n_part, k_part // 8), (
-            f'SM70TurboMind: expected CT qweight [{n_part}, {k_part//8}], '
-            f'got {tuple(ct_q.shape)}')
+            f"SM70TurboMind: expected CT qweight [{n_part}, {k_part // 8}], "
+            f"got {tuple(ct_q.shape)}"
+        )
         assert ct_s.shape[0] == n_part, (
-            f'SM70TurboMind: expected scale dim 0 == {n_part}, '
-            f'got {tuple(ct_s.shape)}')
+            f"SM70TurboMind: expected scale dim 0 == {n_part}, got {tuple(ct_s.shape)}"
+        )
         k_gs = ct_s.shape[1]
 
         logger.info(
-            'SM70TurboMind: layer %s K=%d N=%d gs=%d K/gs=%d asym=%s',
-            getattr(layer, '_layer_name', '?'), k_part, n_part, gs, k_gs,
-            c.zero_points)
+            "SM70TurboMind: layer %s K=%d N=%d gs=%d K/gs=%d asym=%s",
+            getattr(layer, "_layer_name", "?"),
+            k_part,
+            n_part,
+            gs,
+            k_gs,
+            c.zero_points,
+        )
 
         awq_q = _ct_qweight_to_awq(ct_q)
         awq_s = ct_s.t().contiguous().to(torch.float16)
 
         if c.zero_points and ct_zp is not None:
             assert ct_zp.shape == (n_part // 8, k_gs), (
-                f'SM70TurboMind: expected CT qzeros [{n_part//8}, {k_gs}], '
-                f'got {tuple(ct_zp.shape)}')
+                f"SM70TurboMind: expected CT qzeros [{n_part // 8}, {k_gs}], "
+                f"got {tuple(ct_zp.shape)}"
+            )
             awq_zp = _ct_qzeros_to_awq(ct_zp)
         else:
-            zp_val = torch.tensor(
-                [0x88888888], dtype=torch.uint32).view(torch.int32).item()
-            awq_zp = torch.full((k_gs, n_part // 8), zp_val,
-                                dtype=torch.int32, device=device)
+            zp_val = (
+                torch.tensor([0x88888888], dtype=torch.uint32).view(torch.int32).item()
+            )
+            awq_zp = torch.full(
+                (k_gs, n_part // 8), zp_val, dtype=torch.int32, device=device
+            )
 
         tm_w, tm_s, meta = ops.awq_sm70_prepare(awq_q, awq_s, awq_zp, gs)
 
@@ -160,15 +179,17 @@ class SM70TurboMindLinearKernel(MPLinearKernel):
         empty_i32 = torch.empty(0, dtype=torch.int32, device=device)
         empty_fp16 = torch.empty(0, dtype=torch.float16, device=device)
         replace_parameter(
-            layer, self.w_q_name,
-            torch.nn.Parameter(empty_i32, requires_grad=False))
+            layer, self.w_q_name, torch.nn.Parameter(empty_i32, requires_grad=False)
+        )
         replace_parameter(
-            layer, self.w_s_name,
-            torch.nn.Parameter(empty_fp16, requires_grad=False))
+            layer, self.w_s_name, torch.nn.Parameter(empty_fp16, requires_grad=False)
+        )
         if c.zero_points and self.w_zp_name:
             replace_parameter(
-                layer, self.w_zp_name,
-                torch.nn.Parameter(empty_i32, requires_grad=False))
+                layer,
+                self.w_zp_name,
+                torch.nn.Parameter(empty_i32, requires_grad=False),
+            )
 
         del awq_q, awq_s, awq_zp
 

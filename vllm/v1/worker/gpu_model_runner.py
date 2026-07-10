@@ -1742,9 +1742,9 @@ class GPUModelRunner(
             )
             self.num_accepted_tokens.np[num_reqs:].fill(1)
             self.num_accepted_tokens.copy_to_gpu()
-            spec_sequence_masks_cpu = self.num_decode_draft_tokens.cpu[
-                :num_reqs_padded
-            ] >= 0
+            spec_sequence_masks_cpu = (
+                self.num_decode_draft_tokens.cpu[:num_reqs_padded] >= 0
+            )
 
         kv_cache_groups = self.kv_cache_config.kv_cache_groups
 
@@ -1835,9 +1835,9 @@ class GPUModelRunner(
                     else:
                         break
             state_block_ids.copy_to_gpu(num_reqs_padded)
-            current_mamba_state_block_ids_by_gid[kv_cache_gid] = (
-                state_block_ids.gpu[:num_reqs_padded]
-            )
+            current_mamba_state_block_ids_by_gid[kv_cache_gid] = state_block_ids.gpu[
+                :num_reqs_padded
+            ]
             return current_mamba_state_block_ids_by_gid[kv_cache_gid]
 
         # Cache attention metadata builds across hybrid KV-cache groups
@@ -1943,11 +1943,14 @@ class GPUModelRunner(
                         spec_decode_common_attn_metadata = cm
                 else:
                     spec_decode_common_attn_metadata = cm
-            if self.speculative_config and isinstance(self.drafter, DFlashProposer):
-                if set(self.drafter.attn_layer_names) & set(kv_cache_group.layer_names):
-                    if dflash_common_attn_metadata_by_gid is None:
-                        dflash_common_attn_metadata_by_gid = {}
-                    dflash_common_attn_metadata_by_gid[kv_cache_gid] = cm
+            if (
+                self.speculative_config
+                and isinstance(self.drafter, DFlashProposer)
+                and set(self.drafter.attn_layer_names) & set(kv_cache_group.layer_names)
+            ):
+                if dflash_common_attn_metadata_by_gid is None:
+                    dflash_common_attn_metadata_by_gid = {}
+                dflash_common_attn_metadata_by_gid[kv_cache_gid] = cm
 
             for attn_gid in range(len(self.attn_groups[kv_cache_gid])):
                 if ubatch_slices is not None:
@@ -5028,7 +5031,7 @@ class GPUModelRunner(
                     intermediate_tensors=intermediate_tensors,
                     inputs_embeds=inputs_embeds,
                     **model_kwargs,
-            )
+                )
 
             if self.use_aux_hidden_state_outputs:
                 hidden_states, _ = self._split_aux_model_output(outputs)
@@ -5751,8 +5754,7 @@ class GPUModelRunner(
 
         # Initialize eagle/dflash cudagraph dispatcher if using spec decode.
         if self.speculative_config and (
-            self.speculative_config.use_eagle()
-            or self.speculative_config.use_dflash()
+            self.speculative_config.use_eagle() or self.speculative_config.use_dflash()
         ):
             assert isinstance(self.drafter, EagleProposer | DFlashProposer)
             self.drafter.initialize_cudagraph_keys(cudagraph_mode)

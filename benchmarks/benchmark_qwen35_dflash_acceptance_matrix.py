@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: Copyright contributors to the vLLM project
 """Acceptance and speed matrix for Qwen3.5-9B DFlash on natural tasks.
 
 This runner launches comparable servers across environments, sends streamed
@@ -26,19 +28,20 @@ import subprocess
 import time
 import urllib.request
 from collections import defaultdict
-from dataclasses import asdict, dataclass
+from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 from typing import Any
 
 import requests
 
-
 CURRENT_REPO = Path("/home/ymzx/桌面/dflash/vllm-sm70-dflash/1Cat-vllm-0.0.4/vllm")
 ORACLE_REPO = Path("/home/ymzx/桌面/dflash/vllm")
 DEFAULT_MODEL = Path("/home/ymzx/models/Qwen3.5-9B-AWQ")
 DEFAULT_DRAFT_MODEL = Path("/home/ymzx/models/Qwen3.5-9B-DFlash")
-DEFAULT_NATURAL_SUITE = CURRENT_REPO / "benchmarks/data/qwen35_natural_zh_acceptance.jsonl"
+DEFAULT_NATURAL_SUITE = (
+    CURRENT_REPO / "benchmarks/data/qwen35_natural_zh_acceptance.jsonl"
+)
 DEFAULT_SPEC_BENCH_CACHE = Path("/tmp/spec_bench_question.jsonl")
 SPEC_BENCH_URL = (
     "https://raw.githubusercontent.com/hemingkx/Spec-Bench/refs/heads/main/"
@@ -99,6 +102,7 @@ PRESETS: dict[str, ServerPreset] = {
     ),
 }
 
+
 def _build_scenarios(
     draft_model: Path,
     num_speculative_tokens: int,
@@ -131,7 +135,9 @@ def _download_spec_bench_if_missing(path: Path) -> Path:
     return path
 
 
-def _load_natural_suite(path: Path, categories: set[str] | None) -> list[dict[str, str]]:
+def _load_natural_suite(
+    path: Path, categories: set[str] | None
+) -> list[dict[str, str]]:
     rows: list[dict[str, str]] = []
     with path.open(encoding="utf-8") as f:
         for line in f:
@@ -420,14 +426,10 @@ def _stream_request(
             tpot_ms = None
             decode_tps = None
     prefill_tps = (
-        prompt_tokens / ttft_s
-        if prompt_tokens and ttft_s and ttft_s > 0
-        else None
+        prompt_tokens / ttft_s if prompt_tokens and ttft_s and ttft_s > 0 else None
     )
     e2e_tps = (
-        completion_tokens / elapsed_s
-        if completion_tokens and elapsed_s > 0
-        else None
+        completion_tokens / elapsed_s if completion_tokens and elapsed_s > 0 else None
     )
     return {
         "prompt_tokens": prompt_tokens,
@@ -467,7 +469,9 @@ def _run_prompt(
     delta_accepted = after[2] - before[2]
     if scenario_name == "dflash" and delta_draft_tokens > 0:
         acceptance_rate = delta_accepted / delta_draft_tokens * 100.0
-        acceptance_length = 1.0 + (delta_accepted / delta_drafts if delta_drafts > 0 else 0.0)
+        acceptance_length = 1.0 + (
+            delta_accepted / delta_drafts if delta_drafts > 0 else 0.0
+        )
         per_pos = _format_per_pos_rate(before[3], after[3], delta_drafts)
     else:
         acceptance_rate = None
@@ -495,7 +499,9 @@ def _build_basic_summary(results: list[dict[str, Any]]) -> dict[str, Any]:
     return {
         "num_prompts": len(results),
         "median_prompt_tokens": _median([r.get("prompt_tokens") for r in results]),
-        "median_completion_tokens": _median([r.get("completion_tokens") for r in results]),
+        "median_completion_tokens": _median(
+            [r.get("completion_tokens") for r in results]
+        ),
         "median_ttft_ms": _median([r.get("ttft_ms") for r in results]),
         "median_tpot_ms": _median([r.get("tpot_ms") for r in results]),
         "median_prefill_tps": _median([r.get("prefill_tps") for r in results]),
@@ -510,9 +516,7 @@ def _build_basic_summary(results: list[dict[str, Any]]) -> dict[str, Any]:
             else None
         ),
         "acceptance_length": (
-            1.0 + total_accepted_tokens / total_drafts
-            if total_drafts > 0
-            else None
+            1.0 + total_accepted_tokens / total_drafts if total_drafts > 0 else None
         ),
     }
 
@@ -543,7 +547,9 @@ def _diagnose_categories(
 
     tp4 = _summarize_prompt_results(dflash_by_preset["v100_tp4_current"])["by_category"]
     tp1 = _summarize_prompt_results(dflash_by_preset["v100_tp1_current"])["by_category"]
-    rtx = _summarize_prompt_results(dflash_by_preset["rtx3090_tp1_oracle"])["by_category"]
+    rtx = _summarize_prompt_results(dflash_by_preset["rtx3090_tp1_oracle"])[
+        "by_category"
+    ]
 
     out: dict[str, Any] = {}
     for category in sorted(tp4):

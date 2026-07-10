@@ -76,9 +76,8 @@ class ToolParser:
         if not request.tools:
             return request
 
-        if (
-            isinstance(request, ChatCompletionRequest)
-            and getattr(envs, "VLLM_ENFORCE_STRICT_TOOL_CALLING", False)
+        if isinstance(request, ChatCompletionRequest) and getattr(
+            envs, "VLLM_ENFORCE_STRICT_TOOL_CALLING", False
         ):
             need_tool_calling = (
                 request.tool_choice == "auto"

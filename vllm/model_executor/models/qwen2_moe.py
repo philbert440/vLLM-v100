@@ -72,9 +72,7 @@ from .utils import (
 
 logger = init_logger(__name__)
 SM70_SHARED_GATE_MAX_M = int(os.getenv("VLLM_SM70_SHARED_GATE_MAX_M", "64"))
-SM70_GATE_UP_GATED_SILU = (
-    os.getenv("VLLM_SM70_GATE_UP_GATED_SILU", "0") == "1"
-)
+SM70_GATE_UP_GATED_SILU = os.getenv("VLLM_SM70_GATE_UP_GATED_SILU", "0") == "1"
 
 
 def _can_use_sm70_shared_gate_fusion(

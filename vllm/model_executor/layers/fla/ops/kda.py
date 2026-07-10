@@ -791,10 +791,7 @@ def chunk_kda_scaled_dot_kkt_fwd(
 )
 @triton.autotune(
     configs=(
-        [
-            triton.Config({}, num_warps=num_warps, num_stages=2)
-            for num_warps in [2, 4]
-        ]
+        [triton.Config({}, num_warps=num_warps, num_stages=2) for num_warps in [2, 4]]
         if is_sm70
         else [
             triton.Config({}, num_warps=num_warps, num_stages=num_stages)
@@ -1005,7 +1002,9 @@ def recompute_w_u_fwd(
         ]
         if is_sm70
         else [
-            triton.Config({"BK": BK, "BV": BV}, num_warps=num_warps, num_stages=num_stages)
+            triton.Config(
+                {"BK": BK, "BV": BV}, num_warps=num_warps, num_stages=num_stages
+            )
             for BK in [32, 64]
             for BV in [64, 128]
             for num_warps in [2, 4, 8]

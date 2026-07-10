@@ -10,8 +10,8 @@ dispatch path.
 from __future__ import annotations
 
 import os
-from pathlib import Path
 from collections.abc import Iterable
+from pathlib import Path
 from typing import TYPE_CHECKING
 
 import torch
@@ -45,10 +45,7 @@ def _warmup_enabled() -> bool:
 
 def _single_token_compact_enabled() -> bool:
     raw = os.getenv("VLLM_SM70_AWQ_ENABLE_SINGLE_TOKEN_COMPACT")
-    if raw is None:
-        enabled = True
-    else:
-        enabled = raw == "1"
+    enabled = True if raw is None else raw == "1"
     return enabled and hasattr(torch.ops._C, "awq_moe_single_token_sm70_out")
 
 
@@ -95,7 +92,7 @@ def _save_lut_cache(device: torch.device) -> int:
         return 0
 
 
-def _get_decode_m_values(worker: "Worker") -> list[int]:
+def _get_decode_m_values(worker: Worker) -> list[int]:
     max_dense_m = _parse_positive_int_env("VLLM_SM70_AWQ_WARMUP_MAX_M", 8)
     sizes = {1, 2, 4, 8}
     capture_sizes = worker.vllm_config.compilation_config.cudagraph_capture_sizes
@@ -106,10 +103,8 @@ def _get_decode_m_values(worker: "Worker") -> list[int]:
     return sorted(size for size in sizes if size <= max_dense_m)
 
 
-def _get_moe_token_counts(worker: "Worker") -> list[int]:
-    max_tokens = _parse_positive_int_env(
-        "VLLM_SM70_AWQ_WARMUP_MAX_MOE_TOKENS", 8
-    )
+def _get_moe_token_counts(worker: Worker) -> list[int]:
+    max_tokens = _parse_positive_int_env("VLLM_SM70_AWQ_WARMUP_MAX_MOE_TOKENS", 8)
     return [m for m in _get_decode_m_values(worker) if m <= max_tokens]
 
 
@@ -307,16 +302,18 @@ def _warmup_single_token_compact_layers(
             int(layer.sm70_w13_n_dim),
             int(layer.sm70_w2_k_dim),
             int(layer.sm70_w2_n_dim),
-            int(_group_size_from_tm_scales(
-                int(layer.sm70_w13_k_dim), layer.w13_tm_scales[0]
-            )),
+            int(
+                _group_size_from_tm_scales(
+                    int(layer.sm70_w13_k_dim), layer.w13_tm_scales[0]
+                )
+            ),
             hidden_size,
         )
         calls += 1
     return calls
 
 
-def sm70_awq_warmup(worker: "Worker") -> None:
+def sm70_awq_warmup(worker: Worker) -> None:
     if not _warmup_enabled() or not hasattr(torch.ops._C, "awq_gemm_sm70_out"):
         return
 

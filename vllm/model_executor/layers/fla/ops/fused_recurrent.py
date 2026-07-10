@@ -271,8 +271,11 @@ def fused_recurrent_gated_delta_rule_fwd(
     N = B if cu_seqlens is None else len(cu_seqlens) - 1
     BK = triton.next_power_of_2(K)
     from vllm.model_executor.layers.fla.ops.utils import is_sm70
-    BV = _select_sm70_bv(V, N, HV, q.device) if is_sm70 else min(
-        triton.next_power_of_2(V), 32
+
+    BV = (
+        _select_sm70_bv(V, N, HV, q.device)
+        if is_sm70
+        else min(triton.next_power_of_2(V), 32)
     )
     NK, NV = triton.cdiv(K, BK), triton.cdiv(V, BV)
     assert NK == 1, "NK > 1 is not supported yet"

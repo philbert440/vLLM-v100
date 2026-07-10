@@ -160,9 +160,9 @@ class AWQConfig(QuantizationConfig):
                         "lm_head": False,
                         "modules_to_not_convert": self.modules_to_not_convert,
                     }
-                    return MoeWNA16Config.from_config(
-                        config
-                    ).get_quant_method(layer, prefix)
+                    return MoeWNA16Config.from_config(config).get_quant_method(
+                        layer, prefix
+                    )
 
             # Lazy import to avoid circular import.
             from .awq_marlin import AWQMarlinConfig
@@ -320,7 +320,9 @@ class AWQLinearMethod(LinearMethodBase):
             cap = torch.cuda.get_device_capability(layer.qweight.device)
             if cap[0] == 7 and cap[1] == 0:
                 tm_weight, tm_scales, meta = ops.awq_sm70_prepare(
-                    layer.qweight, layer.scales, layer.qzeros,
+                    layer.qweight,
+                    layer.scales,
+                    layer.qzeros,
                     self.quant_config.group_size,
                 )
                 layer._awq_sm70_weight = tm_weight

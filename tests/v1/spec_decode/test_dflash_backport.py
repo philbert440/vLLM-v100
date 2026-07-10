@@ -6,14 +6,14 @@ from types import SimpleNamespace
 import torch
 from torch import nn
 
-from vllm.config.speculative import SpeculativeConfig
 from vllm.config.compilation import CUDAGraphMode
+from vllm.config.speculative import SpeculativeConfig
 from vllm.model_executor.models.interfaces import EagleModelMixin
+from vllm.model_executor.models.qwen3_5 import Qwen3_5Model
 from vllm.model_executor.models.qwen3_dflash import (
     DFlashQwen3ForCausalLM,
     _get_dflash_per_layer_sliding_window,
 )
-from vllm.model_executor.models.qwen3_5 import Qwen3_5Model
 from vllm.model_executor.models.registry import _TEXT_GENERATION_MODELS
 from vllm.v1.attention.backend import CommonAttentionMetadata
 from vllm.v1.attention.backends.gdn_attn import GDNAttentionMetadataBuilder

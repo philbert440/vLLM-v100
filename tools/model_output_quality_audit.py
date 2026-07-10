@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: Copyright contributors to the vLLM project
 """End-to-end model output quality audit for Qwen3.5 serving surfaces."""
 
 from __future__ import annotations
@@ -123,52 +124,59 @@ def build_cases(tokenizer: Any, args: argparse.Namespace) -> list[dict[str, Any]
     cases = []
     for item in raw_cases:
         prompt = apply_chat_template(tokenizer, item["prompt"], args)
-        cases.append({
-            **item,
-            "prompt": prompt,
-            "prompt_token_count_estimate": token_count(tokenizer, prompt),
-            "target_tokens": None,
-        })
+        cases.append(
+            {
+                **item,
+                "prompt": prompt,
+                "prompt_token_count_estimate": token_count(tokenizer, prompt),
+                "target_tokens": None,
+            }
+        )
 
     tool_prompt = build_tool_case_prompt(tokenizer, args)
-    cases.append({
-        "id": "official_tool_template_xml_call",
-        "category": "tool_template",
-        "prompt": tool_prompt,
-        "prompt_token_count_estimate": token_count(tokenizer, tool_prompt),
-        "target_tokens": None,
-        "grader": {
-            "type": "regex_all",
-            "patterns": [
-                r"<tool_call>",
-                r"<function=get_weather>",
-                r"<parameter=city>\s*Beijing\s*</parameter>",
-                r"<parameter=unit>\s*celsius\s*</parameter>",
-                r"</function>\s*</tool_call>",
-            ],
-            "banned": ["<|im_start|>", "<|im_end|>"],
-        },
-    })
+    cases.append(
+        {
+            "id": "official_tool_template_xml_call",
+            "category": "tool_template",
+            "prompt": tool_prompt,
+            "prompt_token_count_estimate": token_count(tokenizer, tool_prompt),
+            "target_tokens": None,
+            "grader": {
+                "type": "regex_all",
+                "patterns": [
+                    r"<tool_call>",
+                    r"<function=get_weather>",
+                    r"<parameter=city>\s*Beijing\s*</parameter>",
+                    r"<parameter=unit>\s*celsius\s*</parameter>",
+                    r"</function>\s*</tool_call>",
+                ],
+                "banned": ["<|im_start|>", "<|im_end|>"],
+            },
+        }
+    )
 
     for target_tokens in parse_csv_ints(args.target_lengths):
         for depth in parse_csv_floats(args.needle_depths):
             code = f"MQA{target_tokens}-{int(depth * 100):02d}-V100"
             prompt, prompt_tokens, unit_count = fit_needle_prompt(
-                tokenizer, args, target_tokens, depth, code)
-            cases.append({
-                "id": f"needle_len{target_tokens}_depth{depth:.2f}",
-                "category": "long_context",
-                "prompt": prompt,
-                "prompt_token_count_estimate": prompt_tokens,
-                "unit_count": unit_count,
-                "target_tokens": target_tokens,
-                "needle_depth": depth,
-                "grader": {
-                    "type": "contains_without",
-                    "expected": [code],
-                    "banned": ["<think>", "</think>", "<|im_start|>"],
-                },
-            })
+                tokenizer, args, target_tokens, depth, code
+            )
+            cases.append(
+                {
+                    "id": f"needle_len{target_tokens}_depth{depth:.2f}",
+                    "category": "long_context",
+                    "prompt": prompt,
+                    "prompt_token_count_estimate": prompt_tokens,
+                    "unit_count": unit_count,
+                    "target_tokens": target_tokens,
+                    "needle_depth": depth,
+                    "grader": {
+                        "type": "contains_without",
+                        "expected": [code],
+                        "banned": ["<think>", "</think>", "<|im_start|>"],
+                    },
+                }
+            )
     return cases
 
 
@@ -178,7 +186,7 @@ def find_json_object(text: str) -> Any | None:
     if start < 0 or end < start:
         return None
     try:
-        return json.loads(text[start:end + 1])
+        return json.loads(text[start : end + 1])
     except Exception:
         return None
 
@@ -200,7 +208,8 @@ def grade_output(text: str, grader: dict[str, Any]) -> dict[str, Any]:
         parsed = find_json_object(text)
         fields = grader["fields"]
         field_ok = isinstance(parsed, dict) and all(
-            parsed.get(key) == value for key, value in fields.items())
+            parsed.get(key) == value for key, value in fields.items()
+        )
         return {
             "passed": bool(field_ok) and not banned_hits,
             "expected": fields,
@@ -209,7 +218,8 @@ def grade_output(text: str, grader: dict[str, Any]) -> dict[str, Any]:
         }
     if kind == "regex_all":
         missing = [
-            pattern for pattern in grader["patterns"]
+            pattern
+            for pattern in grader["patterns"]
             if re.search(pattern, text, flags=re.DOTALL) is None
         ]
         return {
@@ -283,25 +293,33 @@ def main() -> int:
         latency = time.perf_counter() - start
         serialized = serialize_output(output, include_prompt_token_ids=False)
         grade = grade_output(serialized["output_text"], case["grader"])
-        rows.append({
-            "id": case["id"],
-            "category": case["category"],
-            "target_tokens": case.get("target_tokens"),
-            "needle_depth": case.get("needle_depth"),
-            "prompt_token_count_estimate": case["prompt_token_count_estimate"],
-            "latency_sec": latency,
-            "grader": case["grader"],
-            "grade": grade,
-            "nonfinite_logprob": output_has_nonfinite(serialized),
-            "output": serialized,
-        })
-        print(json.dumps({
-            "case": case["id"],
-            "passed": grade["passed"],
-            "prompt_tokens": serialized["prompt_token_count"],
-            "latency_sec": latency,
-            "output": normalize_text(serialized["output_text"])[:220],
-        }, ensure_ascii=False), flush=True)
+        rows.append(
+            {
+                "id": case["id"],
+                "category": case["category"],
+                "target_tokens": case.get("target_tokens"),
+                "needle_depth": case.get("needle_depth"),
+                "prompt_token_count_estimate": case["prompt_token_count_estimate"],
+                "latency_sec": latency,
+                "grader": case["grader"],
+                "grade": grade,
+                "nonfinite_logprob": output_has_nonfinite(serialized),
+                "output": serialized,
+            }
+        )
+        print(
+            json.dumps(
+                {
+                    "case": case["id"],
+                    "passed": grade["passed"],
+                    "prompt_tokens": serialized["prompt_token_count"],
+                    "latency_sec": latency,
+                    "output": normalize_text(serialized["output_text"])[:220],
+                },
+                ensure_ascii=False,
+            ),
+            flush=True,
+        )
 
     passed = sum(1 for row in rows if row["grade"]["passed"])
     payload = {
@@ -324,8 +342,9 @@ def main() -> int:
         "cases": rows,
     }
     args.output.parent.mkdir(parents=True, exist_ok=True)
-    args.output.write_text(json.dumps(payload, indent=2, ensure_ascii=False),
-                           encoding="utf-8")
+    args.output.write_text(
+        json.dumps(payload, indent=2, ensure_ascii=False), encoding="utf-8"
+    )
     print(f"wrote {args.output}")
     print(json.dumps(payload["summary"], ensure_ascii=False))
     return 0 if passed == len(rows) else 2
@@ -343,10 +362,12 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--max-num-batched-tokens", type=int, default=8192)
     parser.add_argument("--gpu-memory-utilization", type=float, default=0.90)
     parser.add_argument("--disable-custom-all-reduce", action="store_true")
-    parser.add_argument("--prompt-style", choices=("raw", "qwen35-chat"),
-                        default="qwen35-chat")
-    parser.add_argument("--disable-thinking", action="store_false",
-                        dest="enable_thinking")
+    parser.add_argument(
+        "--prompt-style", choices=("raw", "qwen35-chat"), default="qwen35-chat"
+    )
+    parser.add_argument(
+        "--disable-thinking", action="store_false", dest="enable_thinking"
+    )
     parser.add_argument("--disable-mm", action="store_true")
     parser.add_argument("--target-lengths", default="32768")
     parser.add_argument("--needle-depths", default="0.10,0.50,0.90")
@@ -356,8 +377,9 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--logprobs", type=int, default=5)
     parser.add_argument("--seed", type=int, default=20260508)
     parser.add_argument("--trust-remote-code", action="store_true", default=True)
-    parser.add_argument("--no-trust-remote-code", action="store_false",
-                        dest="trust_remote_code")
+    parser.add_argument(
+        "--no-trust-remote-code", action="store_false", dest="trust_remote_code"
+    )
     parser.add_argument("--offline", action="store_true", default=True)
     parser.add_argument("--online", action="store_false", dest="offline")
     parser.add_argument("--warmup", action="store_true", default=True)
