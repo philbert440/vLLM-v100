@@ -130,7 +130,10 @@ python = "./.venv"
 extend-exclude = ["tests/models/fixtures/*", "tests/prompts/*",
     "benchmarks/sonnet.txt", "tests/lora/data/*", "build/*",
     "vllm/third_party/*", "vllm/entrypoints/serve/instrumentator/static/*", 
-    "docs/governance/process.md"]
+    "docs/governance/process.md",
+    # fork: vendored lmdeploy/turbomind + FA-V100 kernel ports keep their
+    # upstream identifiers (n_copys, fo_0, ...)
+    "lmdeploy/*", "flash-attention-v100/kernel/*"]
 ignore-hidden = true
 ignore-files = true
 ignore-dot = true

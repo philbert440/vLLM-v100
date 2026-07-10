@@ -42,8 +42,10 @@ from vllm.logger import init_logger
 from vllm.model_executor.layers.layernorm import (
     GemmaRMSNorm as Qwen3_5RMSNorm,
 )
-from vllm.model_executor.layers.linear import MergedColumnParallelLinear
-from vllm.model_executor.layers.linear import adjust_block_scale_shard
+from vllm.model_executor.layers.linear import (
+    MergedColumnParallelLinear,
+    adjust_block_scale_shard,
+)
 from vllm.model_executor.layers.logits_processor import LogitsProcessor
 from vllm.model_executor.layers.mamba.mamba_utils import (
     MambaStateCopyFunc,
@@ -52,7 +54,6 @@ from vllm.model_executor.layers.mamba.mamba_utils import (
     MambaStateShapeCalculator,
 )
 from vllm.model_executor.layers.quantization import QuantizationConfig
-from vllm.model_executor.parameter import BlockQuantScaleParameter
 from vllm.model_executor.layers.vocab_parallel_embedding import (
     ParallelLMHead,
     VocabParallelEmbedding,
@@ -60,6 +61,7 @@ from vllm.model_executor.layers.vocab_parallel_embedding import (
 from vllm.model_executor.model_loader.weight_utils import (  # noqa: F401
     default_weight_loader,
 )
+from vllm.model_executor.parameter import BlockQuantScaleParameter
 from vllm.multimodal import MULTIMODAL_REGISTRY
 from vllm.sequence import IntermediateTensors
 from vllm.transformers_utils.configs.qwen3_5 import (
@@ -170,7 +172,7 @@ def _mark_default_sm70_dense_modules(model: nn.Module, tp_size: int) -> None:
         if not prefix:
             continue
         if prefix.rsplit(".", 1)[-1] in suffixes:
-            setattr(module, "_sm70_f16_force_enable", True)
+            module._sm70_f16_force_enable = True
 
 
 class Qwen3_5ProcessingInfo(Qwen3VLProcessingInfo):
@@ -266,9 +268,7 @@ class Qwen3_5GatedDeltaNet(Qwen3NextGatedDeltaNet):
                 projected_states_qkvz = self.in_proj_qkvz(hidden_states)
             projected_states_qkvz, _ = projected_states_qkvz
 
-            projected_states_ba = _maybe_sm70_projection(
-                self.in_proj_ba, hidden_states
-            )
+            projected_states_ba = _maybe_sm70_projection(self.in_proj_ba, hidden_states)
             if projected_states_ba is None:
                 projected_states_ba = self.in_proj_ba(hidden_states)
             projected_states_ba, _ = projected_states_ba
@@ -406,8 +406,9 @@ class Qwen3_5DecoderLayer(Qwen3NextDecoderLayer):
         if self.layer_scale:
             # Use model_config.dtype (runtime dtype, e.g. fp16 on SM70)
             # instead of config.dtype (HF config dtype, e.g. bf16)
-            _scale_dtype = (model_config.dtype
-                            if model_config is not None else config.dtype)
+            _scale_dtype = (
+                model_config.dtype if model_config is not None else config.dtype
+            )
             self.attn_layer_scale = torch.nn.Parameter(
                 torch.zeros(
                     1,
@@ -478,9 +479,9 @@ class Qwen3_5Model(Qwen3NextModel):
 
     def load_weights(self, weights: Iterable[tuple[str, torch.Tensor]]) -> set[str]:
         from vllm.model_executor.model_loader.weight_utils import (
-            default_weight_loader,
             maybe_remap_kv_scale_name,
         )
+
         from .utils import is_pp_missing_parameter
 
         params_dict = dict(self.named_parameters())
@@ -490,8 +491,9 @@ class Qwen3_5Model(Qwen3NextModel):
         # qkv/z are quantized while b/a stay BF16. Keep two packed groups when
         # the model instantiated `in_proj_ba`, otherwise fall back to the
         # legacy fully fused `in_proj_qkvz` layout used by existing paths.
-        has_split_ba_proj = any(".linear_attn.in_proj_ba." in name
-                                for name in params_dict)
+        has_split_ba_proj = any(
+            ".linear_attn.in_proj_ba." in name for name in params_dict
+        )
         stacked_params_mapping = [
             # (param_name, shard_name, shard_id)
             # self attention
@@ -506,15 +508,19 @@ class Qwen3_5Model(Qwen3NextModel):
             ("in_proj_qkvz", "in_proj_z", 3),
         ]
         if has_split_ba_proj:
-            stacked_params_mapping.extend([
-                ("in_proj_ba", "in_proj_b", 0),
-                ("in_proj_ba", "in_proj_a", 1),
-            ])
+            stacked_params_mapping.extend(
+                [
+                    ("in_proj_ba", "in_proj_b", 0),
+                    ("in_proj_ba", "in_proj_a", 1),
+                ]
+            )
         else:
-            stacked_params_mapping.extend([
-                ("in_proj_qkvz", "in_proj_b", 4),
-                ("in_proj_qkvz", "in_proj_a", 5),
-            ])
+            stacked_params_mapping.extend(
+                [
+                    ("in_proj_qkvz", "in_proj_b", 4),
+                    ("in_proj_qkvz", "in_proj_a", 5),
+                ]
+            )
 
         loaded_params: set[str] = set()
         expert_params_mapping = self.get_expert_mapping()
@@ -598,8 +604,9 @@ class Qwen3_5Model(Qwen3NextModel):
                                 )
                             )
                         if isinstance(param, BlockQuantScaleParameter):
-                            weight_block_size = getattr(owner, "weight_block_size",
-                                                        None)
+                            weight_block_size = getattr(
+                                owner, "weight_block_size", None
+                            )
                             shard_size, shard_offset = adjust_block_scale_shard(
                                 weight_block_size, shard_size, shard_offset
                             )
@@ -664,8 +671,7 @@ class Qwen3_5Model(Qwen3NextModel):
                         continue
                     if name not in params_dict:
                         logger.warning_once(
-                            f"Parameter {name} not found in "
-                            "params_dict, skip loading"
+                            f"Parameter {name} not found in params_dict, skip loading"
                         )
                         continue
                     param = params_dict[name]
@@ -694,9 +700,7 @@ class Qwen3_5Model(Qwen3NextModel):
             hidden_states = intermediate_tensors["hidden_states"]
             residual = intermediate_tensors["residual"]
 
-        aux_hidden_states = self._maybe_add_hidden_state(
-            [], 0, hidden_states, residual
-        )
+        aux_hidden_states = self._maybe_add_hidden_state([], 0, hidden_states, residual)
         for layer_idx, layer in enumerate(
             islice(self.layers, self.start_layer, self.end_layer),
             start=self.start_layer,
@@ -836,11 +840,11 @@ class Qwen3_5MoeForCausalLM(Qwen3_5ForCausalLMBase, QwenNextMixtureOfExperts):
         # stale shell env var cannot corrupt 35B / 122B outputs.
         allowlist = _parse_sm70_moe_dense_allowlist()
         for module in self.modules():
-            setattr(module, "_sm70_f16_forbidden", True)
+            module._sm70_f16_forbidden = True
             if allowlist:
                 module_prefix = getattr(module, "prefix", "")
                 if module_prefix and module_prefix.rsplit(".", 1)[-1] in allowlist:
-                    setattr(module, "_sm70_f16_forbidden", False)
+                    module._sm70_f16_forbidden = False
 
         # set MoE hyperparameters
         self.set_moe_parameters()

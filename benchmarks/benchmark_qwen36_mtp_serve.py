@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: Copyright contributors to the vLLM project
 import argparse
 import json
 import os
@@ -13,7 +15,6 @@ from pathlib import Path
 from typing import Any
 
 from transformers import AutoTokenizer
-
 
 DEFAULT_COMPILATION_CONFIG = {
     "cudagraph_mode": "full_and_piecewise",
@@ -62,8 +63,11 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument("--input-tokens", type=int, default=4096)
     parser.add_argument("--output-tokens", type=int, default=256)
     parser.add_argument("--prompt-text-file", default=None)
-    parser.add_argument("--num-speculative-tokens-list", type=_parse_int_list,
-                        default=[1, 2, 3, 4, 6, 8])
+    parser.add_argument(
+        "--num-speculative-tokens-list",
+        type=_parse_int_list,
+        default=[1, 2, 3, 4, 6, 8],
+    )
     parser.add_argument("--skip-baseline", action="store_true")
     parser.add_argument("--repeats", type=int, default=1)
     parser.add_argument("--num-warmups", type=int, default=1)
@@ -116,8 +120,9 @@ def _base_env(args: argparse.Namespace, scenario_dir: Path) -> dict[str, str]:
     return env
 
 
-def _server_command(args: argparse.Namespace, scenario: Scenario,
-                    port: int) -> list[str]:
+def _server_command(
+    args: argparse.Namespace, scenario: Scenario, port: int
+) -> list[str]:
     command = [
         args.python_executable,
         "-m",
@@ -165,17 +170,21 @@ def _server_command(args: argparse.Namespace, scenario: Scenario,
         command.append("--disable-custom-all-reduce")
     if scenario.speculative_config is not None:
         command.extend(
-            ["--speculative-config", json.dumps(scenario.speculative_config)])
+            ["--speculative-config", json.dumps(scenario.speculative_config)]
+        )
     return command
 
 
-def _wait_for_server(host: str, port: int, timeout_s: int,
-                     proc: subprocess.Popen[Any]) -> None:
+def _wait_for_server(
+    host: str, port: int, timeout_s: int, proc: subprocess.Popen[Any]
+) -> None:
     deadline = time.time() + timeout_s
     url = f"http://{host}:{port}/v1/models"
     while time.time() < deadline:
         if proc.poll() is not None:
-            raise RuntimeError(f"Server exited early with return code {proc.returncode}")
+            raise RuntimeError(
+                f"Server exited early with return code {proc.returncode}"
+            )
         try:
             with urllib.request.urlopen(url, timeout=5) as response:
                 if response.status == 200:
@@ -261,9 +270,7 @@ def _build_prompt_text(model: str, input_tokens: int, seed: int) -> tuple[str, i
     if not allowed:
         raise RuntimeError("no non-special tokenizer ids found")
     offset = seed % len(allowed)
-    token_ids = [
-        allowed[(offset + idx) % len(allowed)] for idx in range(input_tokens)
-    ]
+    token_ids = [allowed[(offset + idx) % len(allowed)] for idx in range(input_tokens)]
     text = ""
     encoded: list[int] = []
     for _ in range(20):
@@ -352,7 +359,11 @@ def _stream_completion(
         decode_throughput = None
     else:
         ttft_ms = (first_token_s - start_s) * 1000.0
-        if last_token_s is not None and completion_tokens > 1 and last_token_s > first_token_s:
+        if (
+            last_token_s is not None
+            and completion_tokens > 1
+            and last_token_s > first_token_s
+        ):
             decode_throughput = (completion_tokens - 1) / (last_token_s - first_token_s)
         else:
             decode_throughput = None
@@ -367,9 +378,7 @@ def _stream_completion(
             else None
         ),
         "decode_throughput": decode_throughput,
-        "output_throughput": (
-            completion_tokens / wall_s if wall_s > 0 else None
-        ),
+        "output_throughput": (completion_tokens / wall_s if wall_s > 0 else None),
         "chunks": chunks,
         "text_head": "".join(text_parts)[:200],
     }
@@ -412,9 +421,8 @@ def _run_direct_benchmark(
         result["spec_decode_acceptance_rate"] = (
             delta_accepted_tokens / delta_draft_tokens * 100.0
         )
-        result["spec_decode_acceptance_length"] = (
-            1.0
-            + (delta_accepted_tokens / delta_drafts if delta_drafts > 0 else 0.0)
+        result["spec_decode_acceptance_length"] = 1.0 + (
+            delta_accepted_tokens / delta_drafts if delta_drafts > 0 else 0.0
         )
         result["spec_decode_num_drafts"] = delta_drafts
         result["spec_decode_draft_tokens"] = delta_draft_tokens
@@ -439,8 +447,9 @@ def _mean_vector(vectors: list[list[float]]) -> list[float]:
     width = len(vectors[0])
     if any(len(vector) != width for vector in vectors):
         return []
-    return [sum(vector[idx] for vector in vectors) / len(vectors)
-            for idx in range(width)]
+    return [
+        sum(vector[idx] for vector in vectors) / len(vectors) for idx in range(width)
+    ]
 
 
 def _summarize_runs(runs: list[dict[str, Any]]) -> dict[str, Any]:
@@ -482,7 +491,8 @@ def _summarize_runs(runs: list[dict[str, Any]]) -> dict[str, Any]:
         "median_spec_decode_acceptance_rate": _median(acceptance_rates),
         "median_spec_decode_acceptance_length": _median(acceptance_lengths),
         "mean_spec_decode_per_position_acceptance_rates": _mean_vector(
-            per_position_vectors),
+            per_position_vectors
+        ),
     }
 
 
@@ -498,13 +508,16 @@ def main() -> None:
             trust_remote_code=True,
             local_files_only=True,
         )
-        prompt_token_len = len(tokenizer.encode(
-            prompt_text,
-            add_special_tokens=False,
-        ))
+        prompt_token_len = len(
+            tokenizer.encode(
+                prompt_text,
+                add_special_tokens=False,
+            )
+        )
     else:
         prompt_text, prompt_token_len = _build_prompt_text(
-            args.model, args.input_tokens, args.seed)
+            args.model, args.input_tokens, args.seed
+        )
 
     scenario_summaries: dict[str, dict[str, Any]] = {}
     for scenario_index, scenario in enumerate(_scenarios(args)):

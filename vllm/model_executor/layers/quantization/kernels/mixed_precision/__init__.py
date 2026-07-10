@@ -20,9 +20,6 @@ from vllm.model_executor.layers.quantization.kernels.mixed_precision.dynamic_4bi
 from vllm.model_executor.layers.quantization.kernels.mixed_precision.exllama import (  # noqa: E501
     ExllamaLinearKernel,
 )
-from vllm.model_executor.layers.quantization.kernels.mixed_precision.sm70_turbomind import (  # noqa: E501
-    SM70TurboMindLinearKernel,
-)
 from vllm.model_executor.layers.quantization.kernels.mixed_precision.machete import (  # noqa: E501
     MacheteLinearKernel,
 )
@@ -32,6 +29,9 @@ from vllm.model_executor.layers.quantization.kernels.mixed_precision.marlin impo
 from vllm.model_executor.layers.quantization.kernels.mixed_precision.MPLinearKernel import (  # noqa: E501
     MPLinearKernel,
     MPLinearLayerConfig,
+)
+from vllm.model_executor.layers.quantization.kernels.mixed_precision.sm70_turbomind import (  # noqa: E501
+    SM70TurboMindLinearKernel,
 )
 from vllm.model_executor.layers.quantization.kernels.mixed_precision.xpu import (  # noqa: E501
     XPUwNa16LinearKernel,

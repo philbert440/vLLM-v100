@@ -426,6 +426,7 @@ def _decode_grouped_att_m_fwd(
         BLOCK = 16
     if not is_hip_ and Lk >= 576:
         import torch as _torch
+
         if _torch.cuda.is_available():
             _cap = _torch.cuda.get_device_capability()
             if _cap[0] < 8:  # SM70/SM75: 96KB shared memory

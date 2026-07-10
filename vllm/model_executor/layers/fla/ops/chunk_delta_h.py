@@ -20,6 +20,7 @@ from .utils import is_sm70, use_cuda_graph
 
 NUM_WARPS = [2, 4, 8, 16]
 
+
 def _parse_sm70_int_list(env_name: str, default_vals: list[int]) -> list[int]:
     raw = os.getenv(env_name)
     if raw is None or not raw.strip():

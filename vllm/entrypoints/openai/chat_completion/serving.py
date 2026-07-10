@@ -1258,9 +1258,9 @@ class OpenAIServingChat(OpenAIServing):
 
                             # get the expected call based on partial JSON
                             # parsing which "autocompletes" the JSON
-                            expected_args = tool_parser.prev_tool_call_arr[
-                                index
-                            ].get("arguments", {})
+                            expected_args = tool_parser.prev_tool_call_arr[index].get(
+                                "arguments", {}
+                            )
                             expected_call = (
                                 expected_args
                                 if isinstance(expected_args, str)

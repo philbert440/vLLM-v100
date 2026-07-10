@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: Copyright contributors to the vLLM project
 """Long-context FlashAttention V100 vs Triton operator regression.
 
 Run from outside the source checkout so imports resolve to the installed
@@ -15,18 +16,18 @@ import json
 import statistics
 import time
 import traceback
+from collections.abc import Callable
 from dataclasses import asdict, dataclass
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any
 
 import torch
-import torch.nn.functional as F
-
 from flash_attn_v100 import (
     flash_attn_decode_paged,
     flash_attn_func,
     flash_attn_prefill_paged,
 )
+
 from vllm.v1.attention.ops.triton_unified_attention import unified_attention
 
 
@@ -136,8 +137,9 @@ def compare_tensors(
     )
 
 
-def event_benchmark(fn: Callable[[], torch.Tensor | None], warmup: int,
-                    iters: int) -> list[float]:
+def event_benchmark(
+    fn: Callable[[], torch.Tensor | None], warmup: int, iters: int
+) -> list[float]:
     for _ in range(warmup):
         fn()
     torch.cuda.synchronize()
@@ -234,12 +236,12 @@ def fa2_gather_dense_prefill(
         k_seq = gather_seq(k_cache, block_table, batch_idx, seq_len).unsqueeze(0)
         v_seq = gather_seq(v_cache, block_table, batch_idx, seq_len).unsqueeze(0)
         out_seq = flash_attn_func(
-            q[batch_idx:batch_idx + 1],
+            q[batch_idx : batch_idx + 1],
             k_seq,
             v_seq,
             causal=True,
         )
-        out[batch_idx:batch_idx + 1].copy_(out_seq)
+        out[batch_idx : batch_idx + 1].copy_(out_seq)
     return out
 
 
@@ -254,10 +256,10 @@ def dense_prefill_case(
     block_size: int,
     device: torch.device,
 ) -> QualityResult:
-    q = torch.randn(bsz, seq_len, q_heads, head_dim, device=device,
-                    dtype=torch.float16)
-    k = torch.randn(bsz, seq_len, kv_heads, head_dim, device=device,
-                    dtype=torch.float16)
+    q = torch.randn(bsz, seq_len, q_heads, head_dim, device=device, dtype=torch.float16)
+    k = torch.randn(
+        bsz, seq_len, kv_heads, head_dim, device=device, dtype=torch.float16
+    )
     v = torch.randn_like(k)
     k_cache, v_cache, block_table, seq_lens = fill_paged_cache(k, v, block_size)
     fa2 = flash_attn_func(q, k, v, causal=True).reshape(-1, q_heads, head_dim)
@@ -301,10 +303,12 @@ def prefix_prefill_case(
     device: torch.device,
     mode: str = "paged",
 ) -> QualityResult:
-    q = torch.randn(bsz, query_len, q_heads, head_dim, device=device,
-                    dtype=torch.float16)
-    k = torch.randn(bsz, seq_len, kv_heads, head_dim, device=device,
-                    dtype=torch.float16)
+    q = torch.randn(
+        bsz, query_len, q_heads, head_dim, device=device, dtype=torch.float16
+    )
+    k = torch.randn(
+        bsz, seq_len, kv_heads, head_dim, device=device, dtype=torch.float16
+    )
     v = torch.randn_like(k)
     k_cache, v_cache, block_table, seq_lens = fill_paged_cache(k, v, block_size)
     if mode == "paged":
@@ -353,14 +357,16 @@ def decode_case(
     block_size: int,
     device: torch.device,
 ) -> QualityResult:
-    k = torch.randn(bsz, seq_len, kv_heads, head_dim, device=device,
-                    dtype=torch.float16)
+    k = torch.randn(
+        bsz, seq_len, kv_heads, head_dim, device=device, dtype=torch.float16
+    )
     v = torch.randn_like(k)
     k_cache, v_cache, block_table, seq_lens = fill_paged_cache(k, v, block_size)
     q = torch.randn(bsz, q_heads, head_dim, device=device, dtype=torch.float16)
     fa2_out = torch.empty_like(q)
-    fa2 = flash_attn_decode_paged(q, k_cache, v_cache, block_table, seq_lens,
-                                  out=fa2_out)
+    fa2 = flash_attn_decode_paged(
+        q, k_cache, v_cache, block_table, seq_lens, out=fa2_out
+    )
     if fa2 is None:
         fa2 = fa2_out
     triton_out = torch.empty_like(q)
@@ -403,16 +409,18 @@ def speed_dense_prefill(
     warmup: int,
     iters: int,
 ) -> SpeedResult:
-    q = torch.randn(bsz, seq_len, q_heads, head_dim, device=device,
-                    dtype=torch.float16)
-    k = torch.randn(bsz, seq_len, kv_heads, head_dim, device=device,
-                    dtype=torch.float16)
+    q = torch.randn(bsz, seq_len, q_heads, head_dim, device=device, dtype=torch.float16)
+    k = torch.randn(
+        bsz, seq_len, kv_heads, head_dim, device=device, dtype=torch.float16
+    )
     v = torch.randn_like(k)
     k_cache, v_cache, block_table, seq_lens = fill_paged_cache(k, v, block_size)
-    fa2_out = torch.empty(bsz, seq_len, q_heads, head_dim, device=device,
-                          dtype=torch.float16)
-    triton_out = torch.empty(bsz * seq_len, q_heads, head_dim, device=device,
-                             dtype=torch.float16)
+    fa2_out = torch.empty(
+        bsz, seq_len, q_heads, head_dim, device=device, dtype=torch.float16
+    )
+    triton_out = torch.empty(
+        bsz * seq_len, q_heads, head_dim, device=device, dtype=torch.float16
+    )
 
     def fa2_fn() -> torch.Tensor:
         result = flash_attn_func(q, k, v, causal=True)
@@ -435,14 +443,21 @@ def speed_dense_prefill(
     check = compare_tensors(name, "dense_prefill", actual, expected, {})
     fa2_ms = event_benchmark(fa2_fn, warmup, iters)
     triton_ms = event_benchmark(triton_fn, warmup, iters)
-    return make_speed_result(name, "dense_prefill", check, fa2_ms, triton_ms, {
-        "batch": bsz,
-        "seq_len": seq_len,
-        "q_heads": q_heads,
-        "kv_heads": kv_heads,
-        "head_dim": head_dim,
-        "block_size": block_size,
-    })
+    return make_speed_result(
+        name,
+        "dense_prefill",
+        check,
+        fa2_ms,
+        triton_ms,
+        {
+            "batch": bsz,
+            "seq_len": seq_len,
+            "q_heads": q_heads,
+            "kv_heads": kv_heads,
+            "head_dim": head_dim,
+            "block_size": block_size,
+        },
+    )
 
 
 @torch.inference_mode()
@@ -460,14 +475,17 @@ def speed_prefix_prefill(
     iters: int,
     include_paged: bool = True,
 ) -> list[SpeedResult]:
-    q = torch.randn(bsz, query_len, q_heads, head_dim, device=device,
-                    dtype=torch.float16)
-    k = torch.randn(bsz, seq_len, kv_heads, head_dim, device=device,
-                    dtype=torch.float16)
+    q = torch.randn(
+        bsz, query_len, q_heads, head_dim, device=device, dtype=torch.float16
+    )
+    k = torch.randn(
+        bsz, seq_len, kv_heads, head_dim, device=device, dtype=torch.float16
+    )
     v = torch.randn_like(k)
     k_cache, v_cache, block_table, seq_lens = fill_paged_cache(k, v, block_size)
-    triton_out = torch.empty(bsz * query_len, q_heads, head_dim, device=device,
-                             dtype=torch.float16)
+    triton_out = torch.empty(
+        bsz * query_len, q_heads, head_dim, device=device, dtype=torch.float16
+    )
     gather_out = torch.empty_like(q)
 
     def fa2_paged_fn() -> torch.Tensor:
@@ -557,8 +575,9 @@ def speed_decode(
     warmup: int,
     iters: int,
 ) -> SpeedResult:
-    k = torch.randn(bsz, seq_len, kv_heads, head_dim, device=device,
-                    dtype=torch.float16)
+    k = torch.randn(
+        bsz, seq_len, kv_heads, head_dim, device=device, dtype=torch.float16
+    )
     v = torch.randn_like(k)
     k_cache, v_cache, block_table, seq_lens = fill_paged_cache(k, v, block_size)
     q = torch.randn(bsz, q_heads, head_dim, device=device, dtype=torch.float16)
@@ -566,8 +585,9 @@ def speed_decode(
     triton_out = torch.empty_like(q)
 
     def fa2_fn() -> torch.Tensor:
-        result = flash_attn_decode_paged(q, k_cache, v_cache, block_table,
-                                         seq_lens, out=fa2_out)
+        result = flash_attn_decode_paged(
+            q, k_cache, v_cache, block_table, seq_lens, out=fa2_out
+        )
         return fa2_out if result is None else result
 
     def triton_fn() -> torch.Tensor:
@@ -586,14 +606,21 @@ def speed_decode(
     check = compare_tensors(name, "decode", actual, expected, {})
     fa2_ms = event_benchmark(fa2_fn, warmup, iters)
     triton_ms = event_benchmark(triton_fn, warmup, iters)
-    return make_speed_result(name, "decode", check, fa2_ms, triton_ms, {
-        "batch": bsz,
-        "seq_len": seq_len,
-        "q_heads": q_heads,
-        "kv_heads": kv_heads,
-        "head_dim": head_dim,
-        "block_size": block_size,
-    })
+    return make_speed_result(
+        name,
+        "decode",
+        check,
+        fa2_ms,
+        triton_ms,
+        {
+            "batch": bsz,
+            "seq_len": seq_len,
+            "q_heads": q_heads,
+            "kv_heads": kv_heads,
+            "head_dim": head_dim,
+            "block_size": block_size,
+        },
+    )
 
 
 def make_speed_result(
@@ -626,34 +653,108 @@ def quality_cases(device: torch.device) -> list[Callable[[], QualityResult]]:
     cases = [
         lambda: dense_prefill_case(
             "qwen35_moe_dense_full_prefill_b1_s2048_h16_kv2_hd256",
-            1, 2048, 16, 2, 256, 16, device),
+            1,
+            2048,
+            16,
+            2,
+            256,
+            16,
+            device,
+        ),
         lambda: dense_prefill_case(
             "qwen35_moe_dense_full_prefill_b1_s2048_h16_kv2_hd256_blk528",
-            1, 2048, 16, 2, 256, 528, device),
+            1,
+            2048,
+            16,
+            2,
+            256,
+            528,
+            device,
+        ),
         lambda: dense_prefill_case(
             "qwen35_27b_dense_full_prefill_b1_s2048_h24_kv4_hd256",
-            1, 2048, 24, 4, 256, 16, device),
+            1,
+            2048,
+            24,
+            4,
+            256,
+            16,
+            device,
+        ),
         lambda: prefix_prefill_case(
             "qwen35_moe_prefix_prefill_b1_q512_ctx8192_h16_kv2_hd256",
-            1, 512, 8192, 16, 2, 256, 16, device),
+            1,
+            512,
+            8192,
+            16,
+            2,
+            256,
+            16,
+            device,
+        ),
         lambda: prefix_prefill_case(
             "qwen35_moe_prefix_prefill_b1_q512_ctx8192_h16_kv2_hd256_blk528_default",
-            1, 512, 8192, 16, 2, 256, 528, device, "gather_dense"),
+            1,
+            512,
+            8192,
+            16,
+            2,
+            256,
+            528,
+            device,
+            "gather_dense",
+        ),
         lambda: prefix_prefill_case(
             "qwen35_27b_prefix_prefill_b1_q512_ctx8192_h24_kv4_hd256",
-            1, 512, 8192, 24, 4, 256, 16, device),
+            1,
+            512,
+            8192,
+            24,
+            4,
+            256,
+            16,
+            device,
+        ),
         lambda: decode_case(
             "qwen35_moe_decode_b1_ctx16384_h16_kv2_hd256",
-            1, 16384, 16, 2, 256, 16, device),
+            1,
+            16384,
+            16,
+            2,
+            256,
+            16,
+            device,
+        ),
         lambda: decode_case(
             "qwen35_moe_decode_b4_ctx16384_h16_kv2_hd256",
-            4, 16384, 16, 2, 256, 16, device),
+            4,
+            16384,
+            16,
+            2,
+            256,
+            16,
+            device,
+        ),
         lambda: decode_case(
             "qwen35_moe_decode_b4_ctx16384_h16_kv2_hd256_blk528",
-            4, 16384, 16, 2, 256, 528, device),
+            4,
+            16384,
+            16,
+            2,
+            256,
+            528,
+            device,
+        ),
         lambda: decode_case(
             "qwen35_27b_decode_b4_ctx16384_h24_kv4_hd256",
-            4, 16384, 24, 4, 256, 16, device),
+            4,
+            16384,
+            24,
+            4,
+            256,
+            16,
+            device,
+        ),
     ]
     return cases
 
@@ -662,16 +763,48 @@ def quality_cases_256k(device: torch.device) -> list[Callable[[], QualityResult]
     return [
         lambda: prefix_prefill_case(
             "qwen35_moe_prefix_prefill_b1_q512_ctx262144_h16_kv2_hd256_blk528_default",
-            1, 512, 262144, 16, 2, 256, 528, device, "gather_dense"),
+            1,
+            512,
+            262144,
+            16,
+            2,
+            256,
+            528,
+            device,
+            "gather_dense",
+        ),
         lambda: prefix_prefill_case(
             "qwen35_moe_prefix_prefill_b1_q1024_ctx262144_h16_kv2_hd256_blk528_default",
-            1, 1024, 262144, 16, 2, 256, 528, device, "gather_dense"),
+            1,
+            1024,
+            262144,
+            16,
+            2,
+            256,
+            528,
+            device,
+            "gather_dense",
+        ),
         lambda: decode_case(
             "qwen35_moe_decode_b1_ctx262144_h16_kv2_hd256_blk528",
-            1, 262144, 16, 2, 256, 528, device),
+            1,
+            262144,
+            16,
+            2,
+            256,
+            528,
+            device,
+        ),
         lambda: decode_case(
             "qwen35_moe_decode_b4_ctx262144_h16_kv2_hd256_blk528",
-            4, 262144, 16, 2, 256, 528, device),
+            4,
+            262144,
+            16,
+            2,
+            256,
+            528,
+            device,
+        ),
     ]
 
 
@@ -683,34 +816,128 @@ def speed_cases(
     cases = [
         lambda: speed_dense_prefill(
             "qwen35_moe_dense_full_prefill_b1_s4096_h16_kv2_hd256",
-            1, 4096, 16, 2, 256, 16, device, warmup, iters),
+            1,
+            4096,
+            16,
+            2,
+            256,
+            16,
+            device,
+            warmup,
+            iters,
+        ),
         lambda: speed_dense_prefill(
             "qwen35_moe_dense_full_prefill_b1_s4096_h16_kv2_hd256_blk528",
-            1, 4096, 16, 2, 256, 528, device, warmup, iters),
+            1,
+            4096,
+            16,
+            2,
+            256,
+            528,
+            device,
+            warmup,
+            iters,
+        ),
         lambda: speed_prefix_prefill(
             "qwen35_moe_prefix_prefill_b1_q512_ctx8192_h16_kv2_hd256",
-            1, 512, 8192, 16, 2, 256, 16, device, warmup, iters),
+            1,
+            512,
+            8192,
+            16,
+            2,
+            256,
+            16,
+            device,
+            warmup,
+            iters,
+        ),
         lambda: speed_prefix_prefill(
             "qwen35_moe_prefix_prefill_b1_q512_ctx8192_h16_kv2_hd256_blk528",
-            1, 512, 8192, 16, 2, 256, 528, device, warmup, iters, False),
+            1,
+            512,
+            8192,
+            16,
+            2,
+            256,
+            528,
+            device,
+            warmup,
+            iters,
+            False,
+        ),
         lambda: speed_prefix_prefill(
             "qwen35_moe_prefix_prefill_b1_q1024_ctx16384_h16_kv2_hd256",
-            1, 1024, 16384, 16, 2, 256, 16, device, warmup, max(3, iters // 2)),
+            1,
+            1024,
+            16384,
+            16,
+            2,
+            256,
+            16,
+            device,
+            warmup,
+            max(3, iters // 2),
+        ),
         lambda: speed_decode(
             "qwen35_moe_decode_b1_ctx8192_h16_kv2_hd256",
-            1, 8192, 16, 2, 256, 16, device, warmup, iters),
+            1,
+            8192,
+            16,
+            2,
+            256,
+            16,
+            device,
+            warmup,
+            iters,
+        ),
         lambda: speed_decode(
             "qwen35_moe_decode_b4_ctx8192_h16_kv2_hd256",
-            4, 8192, 16, 2, 256, 16, device, warmup, iters),
+            4,
+            8192,
+            16,
+            2,
+            256,
+            16,
+            device,
+            warmup,
+            iters,
+        ),
         lambda: speed_decode(
             "qwen35_moe_decode_b4_ctx8192_h16_kv2_hd256_blk528",
-            4, 8192, 16, 2, 256, 528, device, warmup, iters),
+            4,
+            8192,
+            16,
+            2,
+            256,
+            528,
+            device,
+            warmup,
+            iters,
+        ),
         lambda: speed_decode(
             "qwen35_moe_decode_b1_ctx32768_h16_kv2_hd256",
-            1, 32768, 16, 2, 256, 16, device, warmup, max(3, iters // 2)),
+            1,
+            32768,
+            16,
+            2,
+            256,
+            16,
+            device,
+            warmup,
+            max(3, iters // 2),
+        ),
         lambda: speed_decode(
             "qwen35_27b_decode_b4_ctx8192_h24_kv4_hd256",
-            4, 8192, 24, 4, 256, 16, device, warmup, iters),
+            4,
+            8192,
+            24,
+            4,
+            256,
+            16,
+            device,
+            warmup,
+            iters,
+        ),
     ]
     return cases
 
@@ -724,18 +951,56 @@ def speed_cases_256k(
     return [
         lambda: speed_prefix_prefill(
             "qwen35_moe_prefix_prefill_b1_q512_ctx262144_h16_kv2_hd256_blk528",
-            1, 512, 262144, 16, 2, 256, 528, device, warmup, long_iters,
-            False),
+            1,
+            512,
+            262144,
+            16,
+            2,
+            256,
+            528,
+            device,
+            warmup,
+            long_iters,
+            False,
+        ),
         lambda: speed_prefix_prefill(
             "qwen35_moe_prefix_prefill_b1_q1024_ctx262144_h16_kv2_hd256_blk528",
-            1, 1024, 262144, 16, 2, 256, 528, device, warmup, long_iters,
-            False),
+            1,
+            1024,
+            262144,
+            16,
+            2,
+            256,
+            528,
+            device,
+            warmup,
+            long_iters,
+            False,
+        ),
         lambda: speed_decode(
             "qwen35_moe_decode_b1_ctx262144_h16_kv2_hd256_blk528",
-            1, 262144, 16, 2, 256, 528, device, warmup, long_iters),
+            1,
+            262144,
+            16,
+            2,
+            256,
+            528,
+            device,
+            warmup,
+            long_iters,
+        ),
         lambda: speed_decode(
             "qwen35_moe_decode_b4_ctx262144_h16_kv2_hd256_blk528",
-            4, 262144, 16, 2, 256, 528, device, warmup, long_iters),
+            4,
+            262144,
+            16,
+            2,
+            256,
+            528,
+            device,
+            warmup,
+            long_iters,
+        ),
     ]
 
 
@@ -753,7 +1018,16 @@ def speed_cases_tp4_local_decode(
     return [
         lambda bsz=bsz, ctx=ctx: speed_decode(
             f"qwen35_tp4local_decode_b{bsz}_ctx{ctx}_h4_kv1_hd256_blk528",
-            bsz, ctx, 4, 1, 256, 528, device, warmup, iters)
+            bsz,
+            ctx,
+            4,
+            1,
+            256,
+            528,
+            device,
+            warmup,
+            iters,
+        )
         for bsz in (1, 4)
         for ctx in contexts
     ]
@@ -770,8 +1044,7 @@ def run_safely(
             kind="exception",
             shape={},
             passed=False,
-            message=f"{type(exc).__name__}: {exc}\n"
-            f"{traceback.format_exc(limit=8)}",
+            message=f"{type(exc).__name__}: {exc}\n{traceback.format_exc(limit=8)}",
         )
 
 
@@ -796,7 +1069,8 @@ def main() -> int:
     props = torch.cuda.get_device_properties(device)
     if props.major != 7 or props.minor != 0:
         raise RuntimeError(
-            f"expected V100/sm70, got {props.name} sm{props.major}{props.minor}")
+            f"expected V100/sm70, got {props.name} sm{props.major}{props.minor}"
+        )
 
     set_seed(20260507)
     quality: list[QualityResult] = []
@@ -815,7 +1089,8 @@ def main() -> int:
     if not args.skip_speed:
         if args.profile_tp4_local_decode:
             selected_speed_cases = speed_cases_tp4_local_decode(
-                device, args.warmup, args.iters)
+                device, args.warmup, args.iters
+            )
         elif args.profile_256k:
             selected_speed_cases = speed_cases_256k(device, args.warmup, args.iters)
         else:
@@ -846,8 +1121,9 @@ def main() -> int:
             f"/tmp/fa2_triton_longctx_ops_{time.strftime('%Y%m%d_%H%M%S')}.json"
         )
     output_json.parent.mkdir(parents=True, exist_ok=True)
-    output_json.write_text(json.dumps(payload, indent=2, ensure_ascii=False),
-                           encoding="utf-8")
+    output_json.write_text(
+        json.dumps(payload, indent=2, ensure_ascii=False), encoding="utf-8"
+    )
 
     failed_quality = [case.name for case in quality if not case.passed]
     failed_speed_quality = [case.name for case in speed if not case.passed_quality]

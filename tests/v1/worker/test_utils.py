@@ -1,8 +1,8 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-FileCopyrightText: Copyright contributors to the vLLM project
 
-import torch
 import pytest
+import torch
 
 from vllm.config import CacheConfig
 from vllm.utils.mem_utils import MemorySnapshot

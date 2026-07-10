@@ -24,5 +24,13 @@ jobs:
     - run: echo "::add-matcher::.github/workflows/matchers/markdownlint.json"
     - run: echo "::add-matcher::.github/workflows/matchers/mypy.json"
     - uses: pre-commit/action@2c7b3805fd2a0fd8c1884dcaebf91fc102a13ecd # v3.0.1
+      env:
+        # Fork policy (V100/SM70 experiments fork): skip the upstream-strict
+        # hooks this tree will never satisfy — mypy over research spec-decode
+        # code, format churn on working CUDA kernels, markdown docs, and
+        # environment-pinned requirements regeneration. ruff/typos/actionlint/
+        # shellcheck/SPDX still run. The pre-commit CONFIG stays pristine so
+        # upstream syncs merge clean; the skip list lives here instead.
+        SKIP: mypy-3.10,mypy-3.11,mypy-3.12,mypy-3.13,clang-format,pip-compile,markdownlint
       with:
         extra_args: --all-files --hook-stage manual

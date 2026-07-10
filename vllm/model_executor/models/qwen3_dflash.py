@@ -665,12 +665,10 @@ class DFlashQwen3Model(nn.Module):
                     ) in debug_direct_refs[i]:
                         sample_tokens = debug_direct_k.shape[0]
                         sample_end = sample_start + sample_tokens
-                        slots = layer_context_slot_mapping[
-                            sample_start:sample_end
-                        ].to(torch.long)
-                        block_idx = torch.div(
-                            slots, block_size, rounding_mode="floor"
+                        slots = layer_context_slot_mapping[sample_start:sample_end].to(
+                            torch.long
                         )
+                        block_idx = torch.div(slots, block_size, rounding_mode="floor")
                         block_off = torch.remainder(slots, block_size)
                         cache_k = kv_cache[block_idx, 0, block_off]
                         cache_v = kv_cache[block_idx, 1, block_off]

@@ -1,13 +1,14 @@
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: Copyright contributors to the vLLM project
 import argparse
-from collections import Counter
 import hashlib
 import json
 import time
+from collections import Counter
 
 from transformers import AutoTokenizer
 
 from vllm import LLM, SamplingParams
-
 
 PROMPTS = [
     (
@@ -127,9 +128,7 @@ def main() -> None:
         use_tqdm=False,
     )
 
-    sampling_params = SamplingParams(
-        max_tokens=args.max_output_tokens, temperature=0.0
-    )
+    sampling_params = SamplingParams(max_tokens=args.max_output_tokens, temperature=0.0)
     results = []
     for (case_id, _), prompt in zip(PROMPTS, prompts):
         start = time.time()
@@ -139,7 +138,9 @@ def main() -> None:
         results.append(
             {
                 "id": case_id,
-                "prompt_tokens": len(tokenizer.encode(prompt, add_special_tokens=False)),
+                "prompt_tokens": len(
+                    tokenizer.encode(prompt, add_special_tokens=False)
+                ),
                 "output_tokens": len(output.token_ids),
                 "elapsed_sec": elapsed,
                 "output_toks_per_sec": (
