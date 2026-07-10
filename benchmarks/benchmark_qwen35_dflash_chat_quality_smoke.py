@@ -1,13 +1,14 @@
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: Copyright contributors to the vLLM project
 import argparse
-from collections import Counter
 import hashlib
 import json
 import time
+from collections import Counter
 
 from transformers import AutoTokenizer
 
 from vllm import LLM, SamplingParams
-
 
 PROMPTS = [
     {

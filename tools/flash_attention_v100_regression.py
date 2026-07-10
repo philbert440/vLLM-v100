@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: Copyright contributors to the vLLM project
 """FlashAttention V100 quality and speed regression harness.
 
 Run from outside the repository root so imports resolve to the tested
@@ -17,14 +18,14 @@ import json
 import statistics
 import time
 import traceback
+from collections.abc import Callable
 from dataclasses import asdict, dataclass
 from pathlib import Path
-from typing import Any, Callable
-
-import torch
-import torch.nn.functional as F
+from typing import Any
 
 import flash_attn_v100_cuda
+import torch
+import torch.nn.functional as F
 from flash_attn_v100 import (
     flash_attn_decode_paged,
     flash_attn_func,
@@ -101,23 +102,27 @@ def ref_dense_attention(
     hq = q.shape[2]
     k = repeat_kv_for_gqa(k, hq)
     v = repeat_kv_for_gqa(v, hq)
-    return F.scaled_dot_product_attention(
-        q.transpose(1, 2),
-        k.transpose(1, 2),
-        v.transpose(1, 2),
-        is_causal=causal,
-        scale=scale,
-    ).transpose(1, 2).contiguous()
+    return (
+        F.scaled_dot_product_attention(
+            q.transpose(1, 2),
+            k.transpose(1, 2),
+            v.transpose(1, 2),
+            is_causal=causal,
+            scale=scale,
+        )
+        .transpose(1, 2)
+        .contiguous()
+    )
 
 
-def rms_norm(x: torch.Tensor, weight: torch.Tensor,
-             eps: float = 1e-6) -> torch.Tensor:
+def rms_norm(x: torch.Tensor, weight: torch.Tensor, eps: float = 1e-6) -> torch.Tensor:
     y = x.float() * torch.rsqrt(x.float().pow(2).mean(dim=-1, keepdim=True) + eps)
     return (y * weight.float()).to(x.dtype)
 
 
-def apply_rope(x: torch.Tensor, positions: torch.Tensor,
-               base: float = 10000.0) -> torch.Tensor:
+def apply_rope(
+    x: torch.Tensor, positions: torch.Tensor, base: float = 10000.0
+) -> torch.Tensor:
     """Apply standard RoPE to [B, S, H, D] or [B, H, D] tensors."""
     orig_shape = x.shape
     if x.dim() == 3:
@@ -128,21 +133,19 @@ def apply_rope(x: torch.Tensor, positions: torch.Tensor,
     head_dim = x.shape[-1]
     half = head_dim // 2
     inv_freq = 1.0 / (
-        base**(torch.arange(0, half, device=x.device, dtype=torch.float32) / half)
+        base ** (torch.arange(0, half, device=x.device, dtype=torch.float32) / half)
     )
     freqs = positions.to(torch.float32).unsqueeze(-1) * inv_freq
     cos = freqs.cos().reshape(pos_shape)
     sin = freqs.sin().reshape(pos_shape)
     x1 = x[..., :half].float()
     x2 = x[..., half:].float()
-    out = torch.cat((x1 * cos - x2 * sin, x1 * sin + x2 * cos),
-                    dim=-1).to(x.dtype)
+    out = torch.cat((x1 * cos - x2 * sin, x1 * sin + x2 * cos), dim=-1).to(x.dtype)
     return out.reshape(orig_shape)
 
 
 def scaled_weight(rows: int, cols: int, device: torch.device) -> torch.Tensor:
-    return (torch.randn(rows, cols, device=device, dtype=torch.float16) *
-            (cols**-0.5))
+    return torch.randn(rows, cols, device=device, dtype=torch.float16) * (cols**-0.5)
 
 
 def linear_project(hidden: torch.Tensor, weight: torch.Tensor) -> torch.Tensor:
@@ -193,8 +196,7 @@ def model_prefill_logits_case(
     vocab_size: int,
     device: torch.device,
 ) -> CaseResult:
-    hidden = torch.randn(bsz, seqlen, hidden_size, device=device,
-                         dtype=torch.float16)
+    hidden = torch.randn(bsz, seqlen, hidden_size, device=device, dtype=torch.float16)
     norm_w = torch.randn(hidden_size, device=device, dtype=torch.float16) * 0.1 + 1
     q_w = scaled_weight(q_heads * head_dim, hidden_size, device)
     k_w = scaled_weight(kv_heads * head_dim, hidden_size, device)
@@ -244,8 +246,9 @@ def model_prefill_logits_case(
         passed=bool(passed),
         max_abs=float(diff.max().item()),
         mean_abs=float(diff.mean().item()),
-        max_rel=float((diff / expected_logits.float().abs().clamp_min(1e-6)).
-                      max().item()),
+        max_rel=float(
+            (diff / expected_logits.float().abs().clamp_min(1e-6)).max().item()
+        ),
     )
 
 
@@ -256,18 +259,25 @@ def fill_paged_cache_from_contiguous(
 ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
     bsz, seqlen, kv_heads, head_dim = k.shape
     blocks_per_seq = (seqlen + block_size - 1) // block_size
-    block_table = torch.arange(bsz * blocks_per_seq, device=k.device,
-                               dtype=torch.int32).view(bsz, blocks_per_seq)
-    k_cache = torch.zeros(bsz * blocks_per_seq, block_size, kv_heads, head_dim,
-                          device=k.device, dtype=k.dtype)
+    block_table = torch.arange(
+        bsz * blocks_per_seq, device=k.device, dtype=torch.int32
+    ).view(bsz, blocks_per_seq)
+    k_cache = torch.zeros(
+        bsz * blocks_per_seq,
+        block_size,
+        kv_heads,
+        head_dim,
+        device=k.device,
+        dtype=k.dtype,
+    )
     v_cache = torch.zeros_like(k_cache)
     for batch_idx in range(bsz):
         for block_idx in range(blocks_per_seq):
             start = block_idx * block_size
             end = min(start + block_size, seqlen)
             physical = int(block_table[batch_idx, block_idx].item())
-            k_cache[physical, :end - start].copy_(k[batch_idx, start:end])
-            v_cache[physical, :end - start].copy_(v[batch_idx, start:end])
+            k_cache[physical, : end - start].copy_(k[batch_idx, start:end])
+            v_cache[physical, : end - start].copy_(v[batch_idx, start:end])
     seq_lens_t = torch.full((bsz,), seqlen, device=k.device, dtype=torch.int32)
     return k_cache, v_cache, block_table, seq_lens_t
 
@@ -312,8 +322,9 @@ def model_decode_logits_case(
     vocab_size: int,
     device: torch.device,
 ) -> CaseResult:
-    context = torch.randn(bsz, context_len, hidden_size, device=device,
-                          dtype=torch.float16)
+    context = torch.randn(
+        bsz, context_len, hidden_size, device=device, dtype=torch.float16
+    )
     token = torch.randn(bsz, hidden_size, device=device, dtype=torch.float16)
     norm_w = torch.randn(hidden_size, device=device, dtype=torch.float16) * 0.1 + 1
     q_w = scaled_weight(q_heads * head_dim, hidden_size, device)
@@ -331,15 +342,18 @@ def model_decode_logits_case(
     k = apply_rope(k, positions)
     q = apply_rope(q, torch.full((bsz,), context_len - 1, device=device))
     k_cache, v_cache, block_table, seq_lens_t = fill_paged_cache_from_contiguous(
-        k, v, block_size)
+        k, v, block_size
+    )
 
     out = torch.empty_like(q)
-    actual_attn = flash_attn_decode_paged(q, k_cache, v_cache, block_table,
-                                          seq_lens_t, out=out)
+    actual_attn = flash_attn_decode_paged(
+        q, k_cache, v_cache, block_table, seq_lens_t, out=out
+    )
     if actual_attn is None:
         actual_attn = out
-    expected_attn = ref_decode_paged(q, k_cache, v_cache, block_table,
-                                     [context_len] * bsz)
+    expected_attn = ref_decode_paged(
+        q, k_cache, v_cache, block_table, [context_len] * bsz
+    )
     actual_hidden = F.linear(actual_attn.reshape(bsz, -1), o_w) + token
     expected_hidden = F.linear(expected_attn.reshape(bsz, -1), o_w) + token
     actual_logits = F.linear(rms_norm(actual_hidden, norm_w), lm_w)
@@ -373,8 +387,9 @@ def model_decode_logits_case(
         passed=bool(passed),
         max_abs=float(diff.max().item()),
         mean_abs=float(diff.mean().item()),
-        max_rel=float((diff / expected_logits.float().abs().clamp_min(1e-6)).
-                      max().item()),
+        max_rel=float(
+            (diff / expected_logits.float().abs().clamp_min(1e-6)).max().item()
+        ),
     )
 
 
@@ -390,10 +405,8 @@ def dense_quality_case(
     causal: bool,
     device: torch.device,
 ) -> CaseResult:
-    q = torch.randn(bsz, q_len, q_heads, head_dim, device=device,
-                    dtype=torch.float16)
-    k = torch.randn(bsz, k_len, kv_heads, head_dim, device=device,
-                    dtype=torch.float16)
+    q = torch.randn(bsz, q_len, q_heads, head_dim, device=device, dtype=torch.float16)
+    k = torch.randn(bsz, k_len, kv_heads, head_dim, device=device, dtype=torch.float16)
     v = torch.randn_like(k)
     actual = flash_attn_func(q, k, v, causal=causal)
     expected = ref_dense_attention(q, k, v, causal)
@@ -418,8 +431,15 @@ def dense_quality_case(
 def dense_backward_case(device: torch.device) -> CaseResult:
     set_seed(4321)
     bsz, seqlen, heads, head_dim = 1, 32, 4, 64
-    q = torch.randn(bsz, seqlen, heads, head_dim, device=device,
-                    dtype=torch.float16, requires_grad=True)
+    q = torch.randn(
+        bsz,
+        seqlen,
+        heads,
+        head_dim,
+        device=device,
+        dtype=torch.float16,
+        requires_grad=True,
+    )
     k = torch.randn_like(q, requires_grad=True)
     v = torch.randn_like(q, requires_grad=True)
     q_ref = q.detach().clone().requires_grad_(True)
@@ -470,13 +490,19 @@ def make_paged_cache(
     head_dim: int,
     device: torch.device,
 ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
-    max_blocks = max((seq_len + block_size - 1) // block_size
-                     for seq_len in seq_lens)
+    max_blocks = max((seq_len + block_size - 1) // block_size for seq_len in seq_lens)
     bsz = len(seq_lens)
-    block_table = torch.arange(bsz * max_blocks, device=device,
-                               dtype=torch.int32).view(bsz, max_blocks)
-    k_cache = torch.randn(bsz * max_blocks, block_size, kv_heads, head_dim,
-                          device=device, dtype=torch.float16)
+    block_table = torch.arange(bsz * max_blocks, device=device, dtype=torch.int32).view(
+        bsz, max_blocks
+    )
+    k_cache = torch.randn(
+        bsz * max_blocks,
+        block_size,
+        kv_heads,
+        head_dim,
+        device=device,
+        dtype=torch.float16,
+    )
     v_cache = torch.randn_like(k_cache)
     seq_lens_t = torch.tensor(seq_lens, device=device, dtype=torch.int32)
     return k_cache, v_cache, block_table, seq_lens_t
@@ -491,7 +517,8 @@ def gather_kv(
     block_size = cache.shape[1]
     blocks = (seq_len + block_size - 1) // block_size
     return cache[block_table[batch_idx, :blocks].long()].reshape(
-        -1, cache.shape[2], cache.shape[3])[:seq_len]
+        -1, cache.shape[2], cache.shape[3]
+    )[:seq_len]
 
 
 def ref_decode_paged(
@@ -502,7 +529,7 @@ def ref_decode_paged(
     seq_lens: list[int],
 ) -> torch.Tensor:
     outs: list[torch.Tensor] = []
-    scale = q.shape[-1]**-0.5
+    scale = q.shape[-1] ** -0.5
     for batch_idx, seq_len in enumerate(seq_lens):
         k = gather_kv(k_cache, block_table, batch_idx, seq_len)
         v = gather_kv(v_cache, block_table, batch_idx, seq_len)
@@ -526,16 +553,26 @@ def decode_quality_case(
     kv_cache_dtype: str = "auto",
 ) -> CaseResult:
     k_cache, v_cache, block_table, seq_lens_t = make_paged_cache(
-        seq_lens, block_size, kv_heads, head_dim, device)
+        seq_lens, block_size, kv_heads, head_dim, device
+    )
     k_cache_in, v_cache_in, k_ref, v_ref, k_scale, v_scale = quantize_paged_cache(
-        k_cache, v_cache, kv_cache_dtype)
-    q = torch.randn(len(seq_lens), q_heads, head_dim, device=device,
-                    dtype=torch.float16)
+        k_cache, v_cache, kv_cache_dtype
+    )
+    q = torch.randn(
+        len(seq_lens), q_heads, head_dim, device=device, dtype=torch.float16
+    )
     out = torch.empty_like(q)
-    actual = flash_attn_decode_paged(q, k_cache_in, v_cache_in, block_table,
-                                     seq_lens_t, out=out,
-                                     kv_cache_dtype=kv_cache_dtype,
-                                     k_scale=k_scale, v_scale=v_scale)
+    actual = flash_attn_decode_paged(
+        q,
+        k_cache_in,
+        v_cache_in,
+        block_table,
+        seq_lens_t,
+        out=out,
+        kv_cache_dtype=kv_cache_dtype,
+        k_scale=k_scale,
+        v_scale=v_scale,
+    )
     if actual is None:
         actual = out
     expected = ref_decode_paged(q, k_ref, v_ref, block_table, seq_lens)
@@ -569,7 +606,7 @@ def ref_prefill_paged(
     seq_lens: list[int],
 ) -> torch.Tensor:
     outs: list[torch.Tensor] = []
-    scale = q.shape[-1]**-0.5
+    scale = q.shape[-1] ** -0.5
     q_len = q.shape[1]
     for batch_idx, seq_len in enumerate(seq_lens):
         k = gather_kv(k_cache, block_table, batch_idx, seq_len)
@@ -599,15 +636,24 @@ def prefill_paged_quality_case(
     kv_cache_dtype: str = "auto",
 ) -> CaseResult:
     k_cache, v_cache, block_table, seq_lens_t = make_paged_cache(
-        seq_lens, block_size, kv_heads, head_dim, device)
+        seq_lens, block_size, kv_heads, head_dim, device
+    )
     k_cache_in, v_cache_in, k_ref, v_ref, k_scale, v_scale = quantize_paged_cache(
-        k_cache, v_cache, kv_cache_dtype)
-    q = torch.randn(len(seq_lens), q_len, q_heads, head_dim, device=device,
-                    dtype=torch.float16)
-    actual = flash_attn_prefill_paged(q, k_cache_in, v_cache_in, block_table,
-                                      seq_lens_t,
-                                      kv_cache_dtype=kv_cache_dtype,
-                                      k_scale=k_scale, v_scale=v_scale)
+        k_cache, v_cache, kv_cache_dtype
+    )
+    q = torch.randn(
+        len(seq_lens), q_len, q_heads, head_dim, device=device, dtype=torch.float16
+    )
+    actual = flash_attn_prefill_paged(
+        q,
+        k_cache_in,
+        v_cache_in,
+        block_table,
+        seq_lens_t,
+        kv_cache_dtype=kv_cache_dtype,
+        k_scale=k_scale,
+        v_scale=v_scale,
+    )
     expected = ref_prefill_paged(q, k_ref, v_ref, block_table, seq_lens)
     torch.cuda.synchronize()
     return compare(
@@ -646,10 +692,12 @@ def dense_short_tail_sweep_case(device: torch.device) -> CaseResult:
         kv_heads = 4 if head_dim == 256 else 2
         for seqlen in lengths:
             for causal in [False, True]:
-                q = torch.randn(1, seqlen, q_heads, head_dim, device=device,
-                                dtype=torch.float16)
-                k = torch.randn(1, seqlen, kv_heads, head_dim, device=device,
-                                dtype=torch.float16)
+                q = torch.randn(
+                    1, seqlen, q_heads, head_dim, device=device, dtype=torch.float16
+                )
+                k = torch.randn(
+                    1, seqlen, kv_heads, head_dim, device=device, dtype=torch.float16
+                )
                 v = torch.randn_like(k)
                 actual = flash_attn_func(q, k, v, causal=causal)
                 expected = ref_dense_attention(q, k, v, causal)
@@ -665,9 +713,8 @@ def dense_short_tail_sweep_case(device: torch.device) -> CaseResult:
                         f"seqlen={seqlen} head_dim={head_dim} "
                         f"q_heads={q_heads} kv_heads={kv_heads} causal={causal}"
                     )
-                if (
-                    not torch.isfinite(actual).all()
-                    or not torch.allclose(actual, expected, atol=3.5e-2, rtol=3.5e-2)
+                if not torch.isfinite(actual).all() or not torch.allclose(
+                    actual, expected, atol=3.5e-2, rtol=3.5e-2
                 ):
                     failures += 1
     return CaseResult(
@@ -802,8 +849,10 @@ def support_surface_case(device: torch.device) -> list[CaseResult]:
         v = torch.randn_like(q)
         captured = io.StringIO()
         try:
-            with contextlib.redirect_stdout(captured), contextlib.redirect_stderr(
-                    captured):
+            with (
+                contextlib.redirect_stdout(captured),
+                contextlib.redirect_stderr(captured),
+            ):
                 flash_attn_func(q, k, v, causal=True)
                 torch.cuda.synchronize()
             passed = True
@@ -818,13 +867,14 @@ def support_surface_case(device: torch.device) -> list[CaseResult]:
                 shape={"head_dim": head_dim, "advertised_head_sizes": advertised},
                 passed=passed,
                 message=msg,
-            ))
+            )
+        )
     return results
 
 
-def event_benchmark(fn: Callable[[], torch.Tensor | None],
-                    warmup: int,
-                    iters: int) -> list[float]:
+def event_benchmark(
+    fn: Callable[[], torch.Tensor | None], warmup: int, iters: int
+) -> list[float]:
     for _ in range(warmup):
         fn()
     torch.cuda.synchronize()
@@ -852,10 +902,8 @@ def dense_speed_case(
     warmup: int,
     iters: int,
 ) -> SpeedResult:
-    q = torch.randn(bsz, seqlen, q_heads, head_dim, device=device,
-                    dtype=torch.float16)
-    k = torch.randn(bsz, seqlen, kv_heads, head_dim, device=device,
-                    dtype=torch.float16)
+    q = torch.randn(bsz, seqlen, q_heads, head_dim, device=device, dtype=torch.float16)
+    k = torch.randn(bsz, seqlen, kv_heads, head_dim, device=device, dtype=torch.float16)
     v = torch.randn_like(k)
     k_ref = repeat_kv_for_gqa(k, q_heads)
     v_ref = repeat_kv_for_gqa(v, q_heads)
@@ -908,10 +956,8 @@ def direct_dense_speed_case(
     warmup: int,
     iters: int,
 ) -> SpeedResult:
-    q = torch.randn(bsz, q_heads, seqlen, head_dim, device=device,
-                    dtype=torch.float16)
-    k = torch.randn(bsz, kv_heads, seqlen, head_dim, device=device,
-                    dtype=torch.float16)
+    q = torch.randn(bsz, q_heads, seqlen, head_dim, device=device, dtype=torch.float16)
+    k = torch.randn(bsz, kv_heads, seqlen, head_dim, device=device, dtype=torch.float16)
     v = torch.randn_like(k)
     out = torch.empty_like(q)
     scale = head_dim**-0.5
@@ -919,8 +965,9 @@ def direct_dense_speed_case(
     v_ref = repeat_kv_for_gqa(v.transpose(1, 2), q_heads).transpose(1, 2)
 
     def flash_fn() -> torch.Tensor:
-        result = flash_attn_v100_cuda.fwd(q, k, v, out, None, 0.0, scale, True,
-                                          -1, -1, 0.0, False, None)
+        result = flash_attn_v100_cuda.fwd(
+            q, k, v, out, None, 0.0, scale, True, -1, -1, 0.0, False, None
+        )
         return result[0]
 
     def sdpa_fn() -> torch.Tensor:
@@ -968,7 +1015,8 @@ def decode_speed_case(
 ) -> SpeedResult:
     seq_lens = [seq_len] * bsz
     k_cache, v_cache, block_table, seq_lens_t = make_paged_cache(
-        seq_lens, block_size, kv_heads, head_dim, device)
+        seq_lens, block_size, kv_heads, head_dim, device
+    )
     k_cache_in, v_cache_in, k_ref_cache, v_ref_cache, k_scale, v_scale = (
         quantize_paged_cache(k_cache, v_cache, kv_cache_dtype)
     )
@@ -986,10 +1034,17 @@ def decode_speed_case(
     v_ref = repeat_kv_for_gqa(v_ref, q_heads)
 
     def flash_fn() -> torch.Tensor:
-        result = flash_attn_decode_paged(q, k_cache_in, v_cache_in,
-                                         block_table, seq_lens_t, out=out,
-                                         kv_cache_dtype=kv_cache_dtype,
-                                         k_scale=k_scale, v_scale=v_scale)
+        result = flash_attn_decode_paged(
+            q,
+            k_cache_in,
+            v_cache_in,
+            block_table,
+            seq_lens_t,
+            out=out,
+            kv_cache_dtype=kv_cache_dtype,
+            k_scale=k_scale,
+            v_scale=v_scale,
+        )
         return out if result is None else result
 
     def sdpa_fn() -> torch.Tensor:
@@ -1028,78 +1083,185 @@ def decode_speed_case(
     )
 
 
-def run_quality(device: torch.device,
-                include_long_context: bool = False) -> list[CaseResult]:
+def run_quality(
+    device: torch.device, include_long_context: bool = False
+) -> list[CaseResult]:
     cases: list[CaseResult] = []
     set_seed()
     runners = [
         lambda: dense_short_tail_sweep_case(device),
         lambda: paged_prefill_tail_sweep_case(device),
-        lambda: dense_quality_case("dense_causal_b1_s64_h4_hd64", 1, 64, 64,
-                                   4, 4, 64, True, device),
-        lambda: dense_quality_case("dense_causal_b2_s128_h8_hd64", 2, 128, 128,
-                                   8, 8, 64, True, device),
-        lambda: dense_quality_case("dense_gqa_b1_s128_hq16_hkv4_hd64", 1, 128,
-                                   128, 16, 4, 64, True, device),
-        lambda: dense_quality_case("dense_noncausal_b2_q96_k128_h8_hd128", 2,
-                                   96, 128, 8, 8, 128, False, device),
-        lambda: dense_quality_case("dense_hd256_b1_s32_h4", 1, 32, 32, 4, 4,
-                                   256, True, device),
         lambda: dense_quality_case(
-            "dense_qwen35_moe_full_attn_b1_s128_hq16_hkv2_hd256", 1, 128,
-            128, 16, 2, 256, True, device),
+            "dense_causal_b1_s64_h4_hd64", 1, 64, 64, 4, 4, 64, True, device
+        ),
         lambda: dense_quality_case(
-            "dense_qwen35_27b_full_attn_b1_s128_hq24_hkv4_hd256", 1, 128,
-            128, 24, 4, 256, True, device),
+            "dense_causal_b2_s128_h8_hd64", 2, 128, 128, 8, 8, 64, True, device
+        ),
+        lambda: dense_quality_case(
+            "dense_gqa_b1_s128_hq16_hkv4_hd64", 1, 128, 128, 16, 4, 64, True, device
+        ),
+        lambda: dense_quality_case(
+            "dense_noncausal_b2_q96_k128_h8_hd128", 2, 96, 128, 8, 8, 128, False, device
+        ),
+        lambda: dense_quality_case(
+            "dense_hd256_b1_s32_h4", 1, 32, 32, 4, 4, 256, True, device
+        ),
+        lambda: dense_quality_case(
+            "dense_qwen35_moe_full_attn_b1_s128_hq16_hkv2_hd256",
+            1,
+            128,
+            128,
+            16,
+            2,
+            256,
+            True,
+            device,
+        ),
+        lambda: dense_quality_case(
+            "dense_qwen35_27b_full_attn_b1_s128_hq24_hkv4_hd256",
+            1,
+            128,
+            128,
+            24,
+            4,
+            256,
+            True,
+            device,
+        ),
         lambda: dense_backward_case(device),
-        lambda: decode_quality_case("decode_paged_b4_hd64", [1, 17, 64, 129],
-                                    16, 8, 8, 64, device),
-        lambda: decode_quality_case("decode_paged_gqa_b3_hd128", [33, 79, 131],
-                                    16, 16, 4, 128, device),
         lambda: decode_quality_case(
-            "decode_paged_qwen35_moe_hd256", [33, 79, 131], 16, 16, 2,
-            256, device),
+            "decode_paged_b4_hd64", [1, 17, 64, 129], 16, 8, 8, 64, device
+        ),
         lambda: decode_quality_case(
-            "decode_paged_qwen35_27b_hd256", [33, 79, 131], 16, 24, 4,
-            256, device),
+            "decode_paged_gqa_b3_hd128", [33, 79, 131], 16, 16, 4, 128, device
+        ),
         lambda: decode_quality_case(
-            "decode_paged_fp8_e4m3_qwen35_hd256", [33, 79, 131], 16, 16,
-            2, 256, device, "fp8_e4m3"),
+            "decode_paged_qwen35_moe_hd256", [33, 79, 131], 16, 16, 2, 256, device
+        ),
         lambda: decode_quality_case(
-            "decode_paged_fp8_e5m2_qwen35_hd256", [33, 79, 131], 16, 16,
-            2, 256, device, "fp8_e5m2"),
-        lambda: decode_quality_case("decode_paged_hd80", [7, 31], 16, 4, 4, 80,
-                                    device),
-        lambda: prefill_paged_quality_case("prefill_paged_no_prefix_hd64", 16,
-                                           [16, 16], 16, 8, 8, 64, device),
-        lambda: prefill_paged_quality_case("prefill_paged_prefix_hd64", 16,
-                                           [64, 47], 16, 8, 8, 64, device),
-        lambda: prefill_paged_quality_case("prefill_paged_gqa_hd128", 8,
-                                           [40, 33], 16, 16, 4, 128, device),
+            "decode_paged_qwen35_27b_hd256", [33, 79, 131], 16, 24, 4, 256, device
+        ),
+        lambda: decode_quality_case(
+            "decode_paged_fp8_e4m3_qwen35_hd256",
+            [33, 79, 131],
+            16,
+            16,
+            2,
+            256,
+            device,
+            "fp8_e4m3",
+        ),
+        lambda: decode_quality_case(
+            "decode_paged_fp8_e5m2_qwen35_hd256",
+            [33, 79, 131],
+            16,
+            16,
+            2,
+            256,
+            device,
+            "fp8_e5m2",
+        ),
+        lambda: decode_quality_case("decode_paged_hd80", [7, 31], 16, 4, 4, 80, device),
         lambda: prefill_paged_quality_case(
-            "prefill_paged_fp8_e4m3_qwen35_hd256", 8, [40, 33], 16, 16,
-            2, 256, device, "fp8_e4m3"),
+            "prefill_paged_no_prefix_hd64", 16, [16, 16], 16, 8, 8, 64, device
+        ),
         lambda: prefill_paged_quality_case(
-            "prefill_paged_fp8_e5m2_qwen35_hd256", 8, [40, 33], 16, 16,
-            2, 256, device, "fp8_e5m2"),
+            "prefill_paged_prefix_hd64", 16, [64, 47], 16, 8, 8, 64, device
+        ),
+        lambda: prefill_paged_quality_case(
+            "prefill_paged_gqa_hd128", 8, [40, 33], 16, 16, 4, 128, device
+        ),
+        lambda: prefill_paged_quality_case(
+            "prefill_paged_fp8_e4m3_qwen35_hd256",
+            8,
+            [40, 33],
+            16,
+            16,
+            2,
+            256,
+            device,
+            "fp8_e4m3",
+        ),
+        lambda: prefill_paged_quality_case(
+            "prefill_paged_fp8_e5m2_qwen35_hd256",
+            8,
+            [40, 33],
+            16,
+            16,
+            2,
+            256,
+            device,
+            "fp8_e5m2",
+        ),
         lambda: model_prefill_logits_case(
             "model_prefill_logits_qwen7b_like_b1_s128_h3584_hq28_hkv4_hd128",
-            1, 128, 3584, 28, 4, 128, 4096, device),
+            1,
+            128,
+            3584,
+            28,
+            4,
+            128,
+            4096,
+            device,
+        ),
         lambda: model_prefill_logits_case(
             "model_prefill_logits_qwen35_moe_like_b1_s128_h2048_hq16_hkv2_hd256",
-            1, 128, 2048, 16, 2, 256, 4096, device),
+            1,
+            128,
+            2048,
+            16,
+            2,
+            256,
+            4096,
+            device,
+        ),
         lambda: model_prefill_logits_case(
             "model_prefill_logits_qwen35_27b_like_b1_s128_h5120_hq24_hkv4_hd256",
-            1, 128, 5120, 24, 4, 256, 4096, device),
+            1,
+            128,
+            5120,
+            24,
+            4,
+            256,
+            4096,
+            device,
+        ),
         lambda: model_decode_logits_case(
             "model_decode_logits_qwen7b_like_b4_ctx1024_h3584_hq28_hkv4_hd128",
-            4, 1024, 16, 3584, 28, 4, 128, 4096, device),
+            4,
+            1024,
+            16,
+            3584,
+            28,
+            4,
+            128,
+            4096,
+            device,
+        ),
         lambda: model_decode_logits_case(
             "model_decode_logits_qwen35_moe_like_b4_ctx1024_h2048_hq16_hkv2_hd256",
-            4, 1024, 16, 2048, 16, 2, 256, 4096, device),
+            4,
+            1024,
+            16,
+            2048,
+            16,
+            2,
+            256,
+            4096,
+            device,
+        ),
         lambda: model_decode_logits_case(
             "model_decode_logits_qwen35_27b_like_b4_ctx1024_h5120_hq24_hkv4_hd256",
-            4, 1024, 16, 5120, 24, 4, 256, 4096, device),
+            4,
+            1024,
+            16,
+            5120,
+            24,
+            4,
+            256,
+            4096,
+            device,
+        ),
     ]
     if include_long_context:
         runners.append(lambda: long_decode_qwen36_27b_case(device))
@@ -1115,51 +1277,161 @@ def run_quality(device: torch.device,
                     passed=False,
                     message=f"{type(exc).__name__}: {exc}\n"
                     f"{traceback.format_exc(limit=4)}",
-                ))
+                )
+            )
     cases.extend(support_surface_case(device))
     return cases
 
 
-def run_speed(device: torch.device, warmup: int,
-              iters: int) -> list[SpeedResult]:
+def run_speed(device: torch.device, warmup: int, iters: int) -> list[SpeedResult]:
     set_seed(5678)
     return [
-        dense_speed_case("speed_dense_b1_s512_h8_hd64", 1, 512, 8, 8, 64,
-                         device, warmup, iters),
-        dense_speed_case("speed_dense_b2_s512_h8_hd64", 2, 512, 8, 8, 64,
-                         device, warmup, iters),
-        dense_speed_case("speed_dense_gqa_b1_s1024_hq16_hkv4_hd64", 1, 1024,
-                         16, 4, 64, device, warmup, iters),
-        direct_dense_speed_case("speed_direct_dense_b1_s512_h8_hd64", 1, 512,
-                                8, 8, 64, device, warmup, iters),
-        direct_dense_speed_case(
-            "speed_direct_dense_gqa_b1_s1024_hq16_hkv4_hd64", 1, 1024, 16, 4,
-            64, device, warmup, iters),
         dense_speed_case(
-            "speed_dense_qwen35_moe_b1_s512_hq16_hkv2_hd256", 1, 512, 16,
-            2, 256, device, warmup, iters),
+            "speed_dense_b1_s512_h8_hd64", 1, 512, 8, 8, 64, device, warmup, iters
+        ),
+        dense_speed_case(
+            "speed_dense_b2_s512_h8_hd64", 2, 512, 8, 8, 64, device, warmup, iters
+        ),
+        dense_speed_case(
+            "speed_dense_gqa_b1_s1024_hq16_hkv4_hd64",
+            1,
+            1024,
+            16,
+            4,
+            64,
+            device,
+            warmup,
+            iters,
+        ),
         direct_dense_speed_case(
-            "speed_direct_dense_qwen35_moe_b1_s512_hq16_hkv2_hd256", 1,
-            512, 16, 2, 256, device, warmup, iters),
+            "speed_direct_dense_b1_s512_h8_hd64",
+            1,
+            512,
+            8,
+            8,
+            64,
+            device,
+            warmup,
+            iters,
+        ),
         direct_dense_speed_case(
-            "speed_direct_dense_qwen35_27b_b1_s512_hq24_hkv4_hd256", 1,
-            512, 24, 4, 256, device, warmup, iters),
-        decode_speed_case("speed_decode_paged_b16_s1024_h8_hd64", 16, 1024,
-                          16, 8, 8, 64, device, warmup, iters),
-        decode_speed_case("speed_decode_paged_gqa_b16_s1024_hq16_hkv4_hd64",
-                          16, 1024, 16, 16, 4, 64, device, warmup, iters),
+            "speed_direct_dense_gqa_b1_s1024_hq16_hkv4_hd64",
+            1,
+            1024,
+            16,
+            4,
+            64,
+            device,
+            warmup,
+            iters,
+        ),
+        dense_speed_case(
+            "speed_dense_qwen35_moe_b1_s512_hq16_hkv2_hd256",
+            1,
+            512,
+            16,
+            2,
+            256,
+            device,
+            warmup,
+            iters,
+        ),
+        direct_dense_speed_case(
+            "speed_direct_dense_qwen35_moe_b1_s512_hq16_hkv2_hd256",
+            1,
+            512,
+            16,
+            2,
+            256,
+            device,
+            warmup,
+            iters,
+        ),
+        direct_dense_speed_case(
+            "speed_direct_dense_qwen35_27b_b1_s512_hq24_hkv4_hd256",
+            1,
+            512,
+            24,
+            4,
+            256,
+            device,
+            warmup,
+            iters,
+        ),
         decode_speed_case(
-            "speed_decode_paged_qwen35_moe_b16_s1024_hq16_hkv2_hd256", 16,
-            1024, 16, 16, 2, 256, device, warmup, iters),
+            "speed_decode_paged_b16_s1024_h8_hd64",
+            16,
+            1024,
+            16,
+            8,
+            8,
+            64,
+            device,
+            warmup,
+            iters,
+        ),
+        decode_speed_case(
+            "speed_decode_paged_gqa_b16_s1024_hq16_hkv4_hd64",
+            16,
+            1024,
+            16,
+            16,
+            4,
+            64,
+            device,
+            warmup,
+            iters,
+        ),
+        decode_speed_case(
+            "speed_decode_paged_qwen35_moe_b16_s1024_hq16_hkv2_hd256",
+            16,
+            1024,
+            16,
+            16,
+            2,
+            256,
+            device,
+            warmup,
+            iters,
+        ),
         decode_speed_case(
             "speed_decode_paged_fp8_e4m3_qwen35_moe_b16_s1024_hq16_hkv2_hd256",
-            16, 1024, 16, 16, 2, 256, device, warmup, iters, "fp8_e4m3"),
+            16,
+            1024,
+            16,
+            16,
+            2,
+            256,
+            device,
+            warmup,
+            iters,
+            "fp8_e4m3",
+        ),
         decode_speed_case(
             "speed_decode_paged_fp8_e5m2_qwen35_moe_b16_s1024_hq16_hkv2_hd256",
-            16, 1024, 16, 16, 2, 256, device, warmup, iters, "fp8_e5m2"),
+            16,
+            1024,
+            16,
+            16,
+            2,
+            256,
+            device,
+            warmup,
+            iters,
+            "fp8_e5m2",
+        ),
         decode_speed_case(
-            "speed_decode_paged_qwen35_27b_b16_s1024_hq24_hkv4_hd256", 16,
-            1024, 16, 24, 4, 256, device, warmup, iters),
+            "speed_decode_paged_qwen35_27b_b16_s1024_hq24_hkv4_hd256",
+            16,
+            1024,
+            16,
+            24,
+            4,
+            256,
+            device,
+            warmup,
+            iters,
+        ),
     ]
 
 
@@ -1182,7 +1454,8 @@ def main() -> int:
     if props.major != 7 or props.minor != 0:
         raise RuntimeError(
             f"FlashAttention V100 regression must run on sm70, got "
-            f"{props.name} sm{props.major}{props.minor}")
+            f"{props.name} sm{props.major}{props.minor}"
+        )
 
     quality: list[CaseResult] = []
     if not args.skip_quality:
@@ -1224,7 +1497,8 @@ def main() -> int:
             f"{status} speed {case.name} flash_median="
             f"{case.flash_ms_median:.4f}ms sdpa_median="
             f"{case.sdpa_ms_median:.4f}ms speedup="
-            f"{case.speedup_vs_sdpa_median:.3f}x")
+            f"{case.speedup_vs_sdpa_median:.3f}x"
+        )
     print(f"wrote {output}")
     if quality_failures or speed_failures:
         return 2

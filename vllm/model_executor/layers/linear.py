@@ -1,8 +1,8 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-FileCopyrightText: Copyright contributors to the vLLM project
 
-import os
 import itertools
+import os
 from abc import abstractmethod
 from typing import Any
 
@@ -48,9 +48,7 @@ from vllm.platforms import current_platform
 logger = init_logger(__name__)
 # Disabled by default: current SM70 dense decode projections regress output
 # quality on Qwen3.x and are only safe for explicit experiments.
-SM70_F16_DENSE_ENABLED = (
-    os.getenv("VLLM_SM70_ENABLE_DENSE_F16_FASTPATH", "0") == "1"
-)
+SM70_F16_DENSE_ENABLED = os.getenv("VLLM_SM70_ENABLE_DENSE_F16_FASTPATH", "0") == "1"
 SM70_F16_DENSE_MAX_M = int(os.getenv("VLLM_SM70_F16_DENSE_MAX_M", "64"))
 SM70_F16_DENSE_DEBUG = os.getenv("VLLM_SM70_F16_DENSE_DEBUG", "0") == "1"
 SM70_UNQUANT_DEBUG = os.getenv("VLLM_SM70_UNQUANT_DEBUG", "0") == "1"
@@ -315,9 +313,8 @@ class UnquantizedLinearMethod(LinearMethodBase):
         if getattr(layer, "_sm70_f16_forbidden", False):
             return
 
-        if (
-            not force_enable
-            and not is_layer_sm70_f16_dense(getattr(layer, "prefix", ""))
+        if not force_enable and not is_layer_sm70_f16_dense(
+            getattr(layer, "prefix", "")
         ):
             return
 
@@ -345,7 +342,10 @@ class UnquantizedLinearMethod(LinearMethodBase):
         layer._sm70_f16_tm_weight = prepared[0]
         layer._sm70_f16_k_ld = int(prepared[1][0].item())
         prefix = getattr(layer, "prefix", "")
-        if prefix.rsplit(".", 1)[-1] == "gate_up_proj" and layer.weight.shape[0] % 2 == 0:
+        if (
+            prefix.rsplit(".", 1)[-1] == "gate_up_proj"
+            and layer.weight.shape[0] % 2 == 0
+        ):
             gated_weight = _interleave_output_rows_for_gated_silu(
                 layer.weight
             ).contiguous()
@@ -384,7 +384,8 @@ class UnquantizedLinearMethod(LinearMethodBase):
             x_2d = x.reshape(-1, x.shape[-1])
             log_fn = (
                 logger.info
-                if x_2d.size(0) <= SM70_F16_DENSE_MAX_M else logger.info_once
+                if x_2d.size(0) <= SM70_F16_DENSE_MAX_M
+                else logger.info_once
             )
             log_fn(
                 "Unquantized linear fallback prefix=%s x_shape=%s w_shape=%s "
@@ -1602,9 +1603,7 @@ class RowParallelLinear(LinearBase):
         # Only fuse bias add into GEMM for rank 0 (this ensures that
         # bias will not get added more than once in TP>1 case)
         bias_ = None if (self.tp_rank > 0 or self.skip_bias_add) else self.bias
-        output_parallel = _maybe_sm70_dense_forward(
-            self, input_parallel, bias_
-        )
+        output_parallel = _maybe_sm70_dense_forward(self, input_parallel, bias_)
         if output_parallel is None:
             output_parallel = self.quant_method.apply(self, input_parallel, bias_)
 

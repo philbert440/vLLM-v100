@@ -1136,11 +1136,7 @@ class VllmConfig:
         # such as [1, 2] for TP=4.
         tp_size = self.parallel_config.tensor_parallel_size
         max_num_tokens = self.scheduler_config.max_num_batched_tokens
-        removed_sizes = [
-            size
-            for size in possible_sizes
-            if size % tp_size != 0
-        ]
+        removed_sizes = [size for size in possible_sizes if size % tp_size != 0]
         if removed_sizes:
             logger.warning(
                 "Batch sizes %s are removed because they are not "
@@ -1149,9 +1145,7 @@ class VllmConfig:
                 removed_sizes,
                 tp_size,
             )
-        valid_sizes = [
-            size for size in possible_sizes if size % tp_size == 0
-        ]
+        valid_sizes = [size for size in possible_sizes if size % tp_size == 0]
         if valid_sizes:
             return valid_sizes
 
@@ -1270,9 +1264,7 @@ class VllmConfig:
                     from vllm.platforms import current_platform
 
                     cap = current_platform.get_device_capability()
-                    use_dense_sm70_cudagraph = (
-                        cap is not None and cap.major == 7
-                    )
+                    use_dense_sm70_cudagraph = cap is not None and cap.major == 7
 
                 if use_dense_sm70_cudagraph:
                     dense_small_cap = min(max_cudagraph_capture_size, 64)

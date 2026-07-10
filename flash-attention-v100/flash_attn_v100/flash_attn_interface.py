@@ -1,14 +1,17 @@
-import torch
-import traceback
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: Copyright contributors to the vLLM project
 import os
+import traceback
+
 import flash_attn_v100_cuda
-from typing import Optional, Sequence, Tuple, Union
+import torch
 
 DEFAULT_DECODE_PARTITION_SIZE = 256
 LONG_CONTEXT_DECODE_PARTITION_SIZE = 512
 LONG_CONTEXT_DECODE_PARTITION_THRESHOLD = 20480
 VALID_DECODE_PARTITION_SIZES = (256, 512, 1024)
 _decode_workspace_cache = {}
+
 
 def maybe_contiguous(x):
     return x.contiguous() if x is not None and not x.is_contiguous() else x
@@ -26,7 +29,14 @@ def _get_decode_workspace(
     partition_size = _get_decode_partition_size(max_seq_capacity)
     max_num_partitions = (max_seq_capacity + partition_size - 1) // partition_size
     device_index = q.device.index if q.device.index is not None else -1
-    key = (device_index, batch_capacity, num_heads, head_dim, max_num_partitions, partition_size)
+    key = (
+        device_index,
+        batch_capacity,
+        num_heads,
+        head_dim,
+        max_num_partitions,
+        partition_size,
+    )
 
     workspace = _decode_workspace_cache.get(key)
     if workspace is None:
@@ -77,7 +87,7 @@ def _flash_attn_forward(
     q: torch.Tensor,
     k: torch.Tensor,
     v: torch.Tensor,
-    out: Optional[torch.Tensor],
+    out: torch.Tensor | None,
     dropout_p: float,
     softmax_scale: float,
     causal: bool,
@@ -91,15 +101,23 @@ def _flash_attn_forward(
     out = maybe_contiguous(out)
     if out is None:
         out = torch.zeros_like(q)
-    lse = torch.zeros(q.shape[0] * q.shape[1] * q.shape[2], dtype=torch.float32, device=q.device)
     outputs = flash_attn_v100_cuda.fwd(
-        q, k, v,
-        out, alibi_slopes,
-        dropout_p, softmax_scale, causal,
-        window_size_left, window_size_right,
-        softcap, return_softmax, None
+        q,
+        k,
+        v,
+        out,
+        alibi_slopes,
+        dropout_p,
+        softmax_scale,
+        causal,
+        window_size_left,
+        window_size_right,
+        softcap,
+        return_softmax,
+        None,
     )
     return outputs[0], outputs[1], None, None
+
 
 def _flash_attn_backward(
     dout: torch.Tensor,
@@ -123,14 +141,28 @@ def _flash_attn_backward(
 ) -> torch.Tensor:
     dout, q, k, v, out = map(maybe_contiguous, (dout, q, k, v, out))
     grads = flash_attn_v100_cuda.bwd(
-        dout, q, k, v, out, softmax_lse,
-        dq, dk, dv,
+        dout,
+        q,
+        k,
+        v,
+        out,
+        softmax_lse,
+        dq,
+        dk,
+        dv,
         alibi_slopes,
-        dropout_p, softmax_scale, causal,
-        window_size_left, window_size_right,
-        softcap, deterministic, None, rng_state
+        dropout_p,
+        softmax_scale,
+        causal,
+        window_size_left,
+        window_size_right,
+        softcap,
+        deterministic,
+        None,
+        rng_state,
     )
     return grads[0], grads[1], grads[2]
+
 
 class FlashAttnFunc(torch.autograd.Function):
     @staticmethod
@@ -148,9 +180,8 @@ class FlashAttnFunc(torch.autograd.Function):
         deterministic: bool,
         return_softmax: bool,
         is_grad_enabled: bool,
-        out: Optional[torch.Tensor],
+        out: torch.Tensor | None,
     ):
-
         q_ = q.permute(0, 2, 1, 3).contiguous()
         k_ = k.permute(0, 2, 1, 3).contiguous()
         v_ = v.permute(0, 2, 1, 3).contiguous()
@@ -189,14 +220,23 @@ class FlashAttnFunc(torch.autograd.Function):
                 # tokens. Supported by the Volta dense kernel.
                 pass
             else:
-                raise NotImplementedError(f"Unsupported window_size={window_size} with causal=True")
+                raise NotImplementedError(
+                    f"Unsupported window_size={window_size} with causal=True"
+                )
 
         out_, lse_, _, rng_state = _flash_attn_forward(
-            q_, k_, v_,
+            q_,
+            k_,
+            v_,
             out.permute(0, 2, 1, 3).contiguous() if out is not None else None,
-            dropout_p, softmax_scale, causal,
-            window_size_left, window_size_right,
-            softcap, alibi_slopes, return_softmax
+            dropout_p,
+            softmax_scale,
+            causal,
+            window_size_left,
+            window_size_right,
+            softcap,
+            alibi_slopes,
+            return_softmax,
         )
 
         out = out_.permute(0, 2, 1, 3).contiguous()
@@ -224,8 +264,15 @@ class FlashAttnFunc(torch.autograd.Function):
         dv_ = torch.empty_like(v_)
 
         _flash_attn_backward(
-            dout_, q_, k_, v_, out_, lse_,
-            dq_, dk_, dv_,
+            dout_,
+            q_,
+            k_,
+            v_,
+            out_,
+            lse_,
+            dq_,
+            dk_,
+            dv_,
             ctx.dropout_p,
             ctx.softmax_scale,
             ctx.causal,
@@ -243,6 +290,7 @@ class FlashAttnFunc(torch.autograd.Function):
 
         return dq, dk, dv, None, None, None, None, None, None, None, None, None, None
 
+
 def flash_attn_func(
     q: torch.Tensor,
     k: torch.Tensor,
@@ -255,14 +303,16 @@ def flash_attn_func(
     alibi_slopes: torch.Tensor = None,
     deterministic: bool = False,
     return_attn_probs: bool = False,
-    out: Optional[torch.Tensor] = None,
+    out: torch.Tensor | None = None,
 ):
     if softmax_scale is None:
         softmax_scale = q.shape[-1] ** -0.5
 
     try:
         return FlashAttnFunc.apply(
-            q, k, v,
+            q,
+            k,
+            v,
             dropout_p,
             softmax_scale,
             causal,
@@ -276,14 +326,27 @@ def flash_attn_func(
         )
     except Exception as e:
         print("VOLTA FA2 FAILED in flash_attn_func")
-        print(f"  q.shape = {list(q.shape)}, dtype = {q.dtype}, device = {q.device}, contiguous = {q.is_contiguous()}")
-        print(f"  k.shape = {list(k.shape)}, dtype = {k.dtype}, device = {k.device}, contiguous = {k.is_contiguous()}")
-        print(f"  v.shape = {list(v.shape)}, dtype = {v.dtype}, device = {v.device}, contiguous = {v.is_contiguous()}")
-        print(f"  causal = {causal}, window_size = {window_size}, softmax_scale = {softmax_scale}")
+        print(
+            f"  q.shape = {list(q.shape)}, dtype = {q.dtype}, "
+            f"device = {q.device}, contiguous = {q.is_contiguous()}"
+        )
+        print(
+            f"  k.shape = {list(k.shape)}, dtype = {k.dtype}, "
+            f"device = {k.device}, contiguous = {k.is_contiguous()}"
+        )
+        print(
+            f"  v.shape = {list(v.shape)}, dtype = {v.dtype}, "
+            f"device = {v.device}, contiguous = {v.is_contiguous()}"
+        )
+        print(
+            f"  causal = {causal}, window_size = {window_size}, "
+            f"softmax_scale = {softmax_scale}"
+        )
         print(f"  Exception type: {type(e).__name__}")
         print(f"  Exception message: {e}")
         traceback.print_exc()
         raise
+
 
 def flash_attn_decode_paged(
     q: torch.Tensor,
@@ -291,8 +354,8 @@ def flash_attn_decode_paged(
     v_cache: torch.Tensor,
     block_table: torch.Tensor,
     seq_lens: torch.Tensor,
-    softmax_scale: Optional[float] = None,
-    out: Optional[torch.Tensor] = None,
+    softmax_scale: float | None = None,
+    out: torch.Tensor | None = None,
     kv_cache_dtype: str = "auto",
     k_scale: float = 1.0,
     v_scale: float = 1.0,
@@ -327,14 +390,15 @@ def flash_attn_decode_paged(
         int(window),
     )
 
+
 def flash_attn_prefill_paged(
     q: torch.Tensor,
     k_cache: torch.Tensor,
     v_cache: torch.Tensor,
     block_table: torch.Tensor,
     seq_lens: torch.Tensor,
-    softmax_scale: Optional[float] = None,
-    out: Optional[torch.Tensor] = None,
+    softmax_scale: float | None = None,
+    out: torch.Tensor | None = None,
     kv_cache_dtype: str = "auto",
     k_scale: float = 1.0,
     v_scale: float = 1.0,

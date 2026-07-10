@@ -173,9 +173,7 @@ def find_tool_properties(
 
 def _get_tool_schema_from_tool(tool: Tool | ChatCompletionToolsParam) -> dict:
     name, params = _extract_tool_info(tool)
-    params = (
-        copy.deepcopy(params) if params else {"type": "object", "properties": {}}
-    )
+    params = copy.deepcopy(params) if params else {"type": "object", "properties": {}}
     if isinstance(params, dict):
         params.pop("$defs", None)
     return {

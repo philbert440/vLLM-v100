@@ -51,9 +51,7 @@ def _is_sm70_lm_head_fastpath_eligible(layer: torch.nn.Module) -> bool:
         return False
     if layer.weight.ndim != 2:
         return False
-    if (layer.weight.shape[1] % 16) != 0 or (layer.weight.shape[0] % 32) != 0:
-        return False
-    return True
+    return not (layer.weight.shape[1] % 16 != 0 or layer.weight.shape[0] % 32 != 0)
 
 
 def _maybe_sm70_lm_head_forward(

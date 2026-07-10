@@ -1,0 +1,3 @@
+# Bash cannot parse CRLF — pin shell scripts to LF regardless of the
+# committing platform (the tree got mass-CRLFd by a Windows checkout once).
+*.sh text eol=lf

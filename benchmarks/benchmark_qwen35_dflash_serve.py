@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: Copyright contributors to the vLLM project
 import argparse
 import json
 import os
@@ -11,7 +13,6 @@ import urllib.request
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
-
 
 DEFAULT_COMPILATION_CONFIG = {
     "cudagraph_mode": "full_and_piecewise",
@@ -132,9 +133,7 @@ def _base_env(
     env["VLLM_CACHE_ROOT"] = str(scenario_dir / "cache")
     if scenario.name == "dflash" and args.dflash_profile:
         env["VLLM_DFLASH_PROFILE"] = "1"
-        env["VLLM_DFLASH_PROFILE_LOG_INTERVAL"] = str(
-            args.dflash_profile_log_interval
-        )
+        env["VLLM_DFLASH_PROFILE_LOG_INTERVAL"] = str(args.dflash_profile_log_interval)
     return env
 
 
@@ -250,7 +249,9 @@ def _wait_for_server(
     url = f"http://{host}:{port}/v1/models"
     while time.time() < deadline:
         if proc.poll() is not None:
-            raise RuntimeError(f"Server exited early with return code {proc.returncode}.")
+            raise RuntimeError(
+                f"Server exited early with return code {proc.returncode}."
+            )
         try:
             with urllib.request.urlopen(url, timeout=5) as response:
                 if response.status == 200:
@@ -298,8 +299,7 @@ def _mean_vector(vectors: list[list[float]]) -> list[float]:
     if any(len(vector) != width for vector in vectors):
         return []
     return [
-        sum(vector[idx] for vector in vectors) / len(vectors)
-        for idx in range(width)
+        sum(vector[idx] for vector in vectors) / len(vectors) for idx in range(width)
     ]
 
 

@@ -1,13 +1,15 @@
-
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: Copyright contributors to the vLLM project
 # SPDX-License-Identifier: BSD-3-Clause
 # Copyright (c) 2025, D.Skryabin
 
-import os
 from pathlib import Path
+
 from packaging.version import parse
 from setuptools import setup
 
 this_dir = Path(__file__).parent.resolve()
+
 
 def get_ext_modules():
     try:
@@ -34,7 +36,8 @@ def get_ext_modules():
                 "nvcc": [
                     "-O3",
                     "-std=c++17",
-                    "-gencode", "arch=compute_70,code=sm_70",
+                    "-gencode",
+                    "arch=compute_70,code=sm_70",
                     "-U__CUDA_NO_HALF_OPERATORS__",
                     "-U__CUDA_NO_HALF_CONVERSIONS__",
                     "-U__CUDA_NO_HALF2_OPERATORS__",
@@ -53,15 +56,17 @@ def get_ext_modules():
                 "nvcc": [
                     "-O3",
                     "-std=c++17",
-                    "-gencode", "arch=compute_70,code=sm_70",
+                    "-gencode",
+                    "arch=compute_70,code=sm_70",
                     "-U__CUDA_NO_HALF_OPERATORS__",
                     "-U__CUDA_NO_HALF_CONVERSIONS__",
                     "-U__CUDA_NO_HALF2_OPERATORS__",
                     "--use_fast_math",
                 ],
             },
-        )
+        ),
     ]
+
 
 def get_cmdclass():
     try:
@@ -75,6 +80,7 @@ def get_cmdclass():
     class CustomBuildExtension(BuildExtension):
         def build_extensions(self):
             import torch
+
             if not torch.cuda.is_available():
                 raise RuntimeError("CUDA is required but not available.")
             if parse(torch.version.cuda) < parse("11.6"):
@@ -85,6 +91,7 @@ def get_cmdclass():
             super().build_extensions()
 
     return {"build_ext": CustomBuildExtension}
+
 
 try:
     with open(this_dir / "README.md", encoding="utf-8") as f:

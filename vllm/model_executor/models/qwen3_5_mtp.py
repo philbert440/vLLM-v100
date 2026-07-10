@@ -2,9 +2,9 @@
 # SPDX-FileCopyrightText: Copyright contributors to the vLLM project
 """Inference-only Qwen3_5 MTP model."""
 
-import typing
-import os
 import copy
+import os
+import typing
 from collections.abc import Callable, Iterable
 
 import torch
@@ -394,8 +394,7 @@ class Qwen3_5MTP(nn.Module, SupportsMultiModal):
                 )
 
             if modules_to_not_convert and any(
-                str(module) in ("mtp", "model.mtp")
-                for module in modules_to_not_convert
+                str(module) in ("mtp", "model.mtp") for module in modules_to_not_convert
             ):
                 return True
 

@@ -2,8 +2,8 @@
 # SPDX-FileCopyrightText: Copyright contributors to the vLLM project
 """Utility methods for model layers."""
 
-from collections.abc import Callable
 import os
+from collections.abc import Callable
 
 import torch
 

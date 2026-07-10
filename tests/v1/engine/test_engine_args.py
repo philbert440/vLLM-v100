@@ -99,7 +99,9 @@ def test_v100_flash_attn_server_defaults_for_long_context(monkeypatch):
     cap = type("DeviceCapability", (), {"major": 7, "minor": 0})()
     monkeypatch.setenv("VLLM_ATTENTION_BACKEND", "FLASH_ATTN_V100")
     monkeypatch.setattr(arg_utils.current_platform, "is_cuda_alike", lambda: True)
-    monkeypatch.setattr(arg_utils.current_platform, "get_device_capability", lambda: cap)
+    monkeypatch.setattr(
+        arg_utils.current_platform, "get_device_capability", lambda: cap
+    )
     monkeypatch.setattr(
         arg_utils.current_platform, "get_device_total_memory", lambda: 32 * GiB_bytes
     )

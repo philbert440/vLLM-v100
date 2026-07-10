@@ -28,8 +28,9 @@ def _prefill_as_decode(
 
     q_len = q.shape[1]
     q_flat = q.squeeze(0).contiguous()
-    seq_lens = seq_len - q_len + torch.arange(
-        1, q_len + 1, device=q.device, dtype=torch.int32)
+    seq_lens = (
+        seq_len - q_len + torch.arange(1, q_len + 1, device=q.device, dtype=torch.int32)
+    )
     decode_block_table = block_table.expand(q_len, -1).contiguous()
     out = torch.empty_like(q_flat)
     flash_attn_decode_paged(
@@ -64,15 +65,12 @@ def test_flash_attn_v100_small_query_prefill_matches_decode(
     head_dim = 256
     softmax_scale = 1.0 / math.sqrt(head_dim)
 
-    q = torch.randn((1, q_len, num_q_heads, head_dim),
-                    device=device,
-                    dtype=dtype)
-    key_cache = torch.randn((num_blocks, block_size, num_kv_heads, head_dim),
-                            device=device,
-                            dtype=dtype)
+    q = torch.randn((1, q_len, num_q_heads, head_dim), device=device, dtype=dtype)
+    key_cache = torch.randn(
+        (num_blocks, block_size, num_kv_heads, head_dim), device=device, dtype=dtype
+    )
     value_cache = torch.randn_like(key_cache)
-    block_table = torch.arange(num_blocks, device=device,
-                               dtype=torch.int32).view(1, -1)
+    block_table = torch.arange(num_blocks, device=device, dtype=torch.int32).view(1, -1)
     seq_lens = torch.tensor([seq_len], device=device, dtype=torch.int32)
 
     ref = flash_attn_prefill_paged(
@@ -86,7 +84,8 @@ def test_flash_attn_v100_small_query_prefill_matches_decode(
         kv_cache_dtype="auto",
         causal=True,
     )
-    actual = _prefill_as_decode(q, key_cache, value_cache, block_table,
-                                seq_len, softmax_scale)
+    actual = _prefill_as_decode(
+        q, key_cache, value_cache, block_table, seq_len, softmax_scale
+    )
 
     torch.testing.assert_close(actual, ref, atol=1e-3, rtol=1e-2)

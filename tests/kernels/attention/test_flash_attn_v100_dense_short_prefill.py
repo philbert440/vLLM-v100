@@ -61,10 +61,11 @@ def _make_paged_cache(
     for block_idx in range(num_blocks):
         start = block_idx * block_size
         end = min(start + block_size, seq_len)
-        key_cache[block_idx, :end - start] = k[0, start:end]
-        value_cache[block_idx, :end - start] = v[0, start:end]
-    block_table = torch.arange(num_blocks, device=k.device,
-                               dtype=torch.int32).view(1, num_blocks)
+        key_cache[block_idx, : end - start] = k[0, start:end]
+        value_cache[block_idx, : end - start] = v[0, start:end]
+    block_table = torch.arange(num_blocks, device=k.device, dtype=torch.int32).view(
+        1, num_blocks
+    )
     seq_lens = torch.tensor([seq_len], device=k.device, dtype=torch.int32)
     return key_cache, value_cache, block_table, seq_lens
 
@@ -92,12 +93,10 @@ def test_flash_attn_v100_dense_prefill_tail_lengths_match_reference(
     device = torch.device("cuda")
     q_heads = 6
     kv_heads = 1
-    q = torch.randn((1, seq_len, q_heads, head_dim),
-                    device=device,
-                    dtype=torch.float16)
-    k = torch.randn((1, seq_len, kv_heads, head_dim),
-                    device=device,
-                    dtype=torch.float16)
+    q = torch.randn((1, seq_len, q_heads, head_dim), device=device, dtype=torch.float16)
+    k = torch.randn(
+        (1, seq_len, kv_heads, head_dim), device=device, dtype=torch.float16
+    )
     v = torch.randn_like(k)
     softmax_scale = 1.0 / math.sqrt(head_dim)
 
@@ -136,16 +135,15 @@ def test_flash_attn_v100_paged_prefill_tail_lengths_match_reference(
     q_heads = 6
     kv_heads = 1
     block_size = 16
-    q = torch.randn((1, query_len, q_heads, head_dim),
-                    device=device,
-                    dtype=torch.float16)
-    k = torch.randn((1, seq_len, kv_heads, head_dim),
-                    device=device,
-                    dtype=torch.float16)
+    q = torch.randn(
+        (1, query_len, q_heads, head_dim), device=device, dtype=torch.float16
+    )
+    k = torch.randn(
+        (1, seq_len, kv_heads, head_dim), device=device, dtype=torch.float16
+    )
     v = torch.randn_like(k)
     softmax_scale = 1.0 / math.sqrt(head_dim)
-    key_cache, value_cache, block_table, seq_lens = _make_paged_cache(
-        k, v, block_size)
+    key_cache, value_cache, block_table, seq_lens = _make_paged_cache(k, v, block_size)
 
     actual = flash_attn_v100.flash_attn_prefill_paged(
         q,

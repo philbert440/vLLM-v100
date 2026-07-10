@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: Copyright contributors to the vLLM project
 """Real vLLM backend regression for FLASH_ATTN_V100 vs TRITON_ATTN.
 
 Run outside the source checkout when possible:
@@ -22,7 +23,6 @@ import sys
 import time
 from pathlib import Path
 from typing import Any
-
 
 BACKENDS = ("FLASH_ATTN_V100", "TRITON_ATTN")
 SPEC_DECODE_COUNTERS = (
@@ -65,8 +65,9 @@ def make_prompt_by_tokens(tokenizer: Any, target_len: int, suffix: str = "") -> 
     return best
 
 
-def maybe_apply_chat_template(tokenizer: Any, user_content: str,
-                              args: argparse.Namespace) -> str:
+def maybe_apply_chat_template(
+    tokenizer: Any, user_content: str, args: argparse.Namespace
+) -> str:
     if args.prompt_style == "raw":
         return user_content
 
@@ -86,12 +87,14 @@ def maybe_apply_chat_template(tokenizer: Any, user_content: str,
         )
 
 
-def build_quality_prompts(tokenizer: Any,
-                          args: argparse.Namespace) -> list[dict[str, str]]:
+def build_quality_prompts(
+    tokenizer: Any, args: argparse.Namespace
+) -> list[dict[str, str]]:
     prompts = [
         {
             "name": "short_zh_reasoning",
-            "prompt": "请用三句话分析 V100 上长上下文推理为什么要同时关注预填充速度和解码速度。",
+            "prompt": "请用三句话分析 V100 上长上下文推理"
+            "为什么要同时关注预填充速度和解码速度。",
         },
         {
             "name": "short_en_reasoning",
@@ -113,8 +116,9 @@ def build_quality_prompts(tokenizer: Any,
         },
         {
             "name": "long_prefill",
-            "prompt": make_prompt_by_tokens(tokenizer, args.long_prompt_tokens,
-                                            "long-prefill"),
+            "prompt": make_prompt_by_tokens(
+                tokenizer, args.long_prompt_tokens, "long-prefill"
+            ),
         },
     ]
     return [
@@ -128,7 +132,7 @@ def build_quality_prompts(tokenizer: Any,
 
 def logprob_obj_to_dict(obj: Any) -> dict[str, Any]:
     return {
-        "logprob": float(getattr(obj, "logprob")),
+        "logprob": float(obj.logprob),
         "rank": getattr(obj, "rank", None),
         "decoded_token": getattr(obj, "decoded_token", None),
     }
@@ -142,17 +146,19 @@ def serialize_logprob_map(logprob_map: Any, limit: int = 8) -> list[dict[str, An
         row = {"token_id": int(token_id)}
         row.update(logprob_obj_to_dict(value))
         items.append(row)
-    items.sort(key=lambda x: (
-        x["rank"] if x["rank"] is not None else 1_000_000,
-        -x["logprob"],
-    ))
+    items.sort(
+        key=lambda x: (
+            x["rank"] if x["rank"] is not None else 1_000_000,
+            -x["logprob"],
+        )
+    )
     return items[:limit]
 
 
 def selected_logprob(logprob_map: Any, token_id: int) -> float | None:
     if not logprob_map or token_id not in logprob_map:
         return None
-    return float(getattr(logprob_map[token_id], "logprob"))
+    return float(logprob_map[token_id].logprob)
 
 
 def spec_decode_metrics_snapshot(llm: Any) -> dict[str, Any]:
@@ -160,9 +166,9 @@ def spec_decode_metrics_snapshot(llm: Any) -> dict[str, Any]:
     accepted_per_pos: list[int] = []
     for metric in llm.get_metrics():
         if metric.name in counters:
-            counters[metric.name] += int(getattr(metric, "value"))
+            counters[metric.name] += int(metric.value)
         elif metric.name == "vllm:spec_decode_num_accepted_tokens_per_pos":
-            values = [int(v) for v in getattr(metric, "values")]
+            values = [int(v) for v in metric.values]
             if len(values) > len(accepted_per_pos):
                 accepted_per_pos.extend([0] * (len(values) - len(accepted_per_pos)))
             for idx, value in enumerate(values):
@@ -175,8 +181,9 @@ def spec_decode_metrics_snapshot(llm: Any) -> dict[str, Any]:
     }
 
 
-def diff_spec_decode_metrics(before: dict[str, Any],
-                             after: dict[str, Any]) -> dict[str, Any]:
+def diff_spec_decode_metrics(
+    before: dict[str, Any], after: dict[str, Any]
+) -> dict[str, Any]:
     num_drafts = int(after["num_drafts"] - before["num_drafts"])
     draft_tokens = int(after["draft_tokens"] - before["draft_tokens"])
     accepted_tokens = int(after["accepted_tokens"] - before["accepted_tokens"])
@@ -196,16 +203,19 @@ def diff_spec_decode_metrics(before: dict[str, Any],
         "draft_tokens": draft_tokens,
         "accepted_tokens": accepted_tokens,
         "acceptance_rate": (
-            accepted_tokens / draft_tokens if draft_tokens > 0 else None),
+            accepted_tokens / draft_tokens if draft_tokens > 0 else None
+        ),
         "acceptance_length": (
-            1.0 + accepted_tokens / num_drafts if num_drafts > 0 else None),
+            1.0 + accepted_tokens / num_drafts if num_drafts > 0 else None
+        ),
         "accepted_tokens_per_pos": delta_per_pos,
         "per_position_acceptance_rates": per_pos_rates,
     }
 
 
-def serialize_request_output(output: Any,
-                             include_prompt_token_ids: bool = True) -> dict[str, Any]:
+def serialize_request_output(
+    output: Any, include_prompt_token_ids: bool = True
+) -> dict[str, Any]:
     completion = output.outputs[0]
     prompt_token_ids = [int(x) for x in output.prompt_token_ids]
     output_token_ids = [int(x) for x in completion.token_ids]
@@ -214,31 +224,38 @@ def serialize_request_output(output: Any,
         logprob_map = None
         if completion.logprobs is not None and idx < len(completion.logprobs):
             logprob_map = completion.logprobs[idx]
-        gen_logprobs.append({
-            "token_id": token_id,
-            "selected_logprob": selected_logprob(logprob_map, token_id),
-            "top": serialize_logprob_map(logprob_map),
-        })
+        gen_logprobs.append(
+            {
+                "token_id": token_id,
+                "selected_logprob": selected_logprob(logprob_map, token_id),
+                "top": serialize_logprob_map(logprob_map),
+            }
+        )
 
     prompt_samples = []
     prompt_logprobs = getattr(output, "prompt_logprobs", None)
     if prompt_logprobs:
-        sample_idxs = sorted({
-            1,
-            2,
-            3,
-            max(1, len(prompt_token_ids) // 2),
-            max(1, len(prompt_token_ids) - 1),
-        })
+        sample_idxs = sorted(
+            {
+                1,
+                2,
+                3,
+                max(1, len(prompt_token_ids) // 2),
+                max(1, len(prompt_token_ids) - 1),
+            }
+        )
         for idx in sample_idxs:
             if idx < len(prompt_logprobs):
-                prompt_samples.append({
-                    "index": idx,
-                    "token_id": prompt_token_ids[idx],
-                    "selected_logprob": selected_logprob(
-                        prompt_logprobs[idx], prompt_token_ids[idx]),
-                    "top": serialize_logprob_map(prompt_logprobs[idx]),
-                })
+                prompt_samples.append(
+                    {
+                        "index": idx,
+                        "token_id": prompt_token_ids[idx],
+                        "selected_logprob": selected_logprob(
+                            prompt_logprobs[idx], prompt_token_ids[idx]
+                        ),
+                        "top": serialize_logprob_map(prompt_logprobs[idx]),
+                    }
+                )
 
     return {
         "prompt_token_ids": prompt_token_ids if include_prompt_token_ids else [],
@@ -248,7 +265,8 @@ def serialize_request_output(output: Any,
         "finish_reason": completion.finish_reason,
         "stop_reason": completion.stop_reason,
         "cumulative_logprob": (
-            None if completion.cumulative_logprob is None
+            None
+            if completion.cumulative_logprob is None
             else float(completion.cumulative_logprob)
         ),
         "generated_logprobs": gen_logprobs,
@@ -258,6 +276,7 @@ def serialize_request_output(output: Any,
 
 def child_main(args: argparse.Namespace) -> int:
     from transformers import AutoTokenizer
+
     from vllm import LLM, SamplingParams
 
     tokenizer = AutoTokenizer.from_pretrained(
@@ -336,8 +355,7 @@ def child_main(args: argparse.Namespace) -> int:
         top_p=1.0,
         max_tokens=args.quality_max_tokens,
         logprobs=args.logprobs if args.logprobs > 0 else None,
-        prompt_logprobs=(
-            args.prompt_logprobs if args.prompt_logprobs > 0 else None),
+        prompt_logprobs=(args.prompt_logprobs if args.prompt_logprobs > 0 else None),
         seed=0,
     )
     warmup_sampling = SamplingParams(
@@ -346,8 +364,9 @@ def child_main(args: argparse.Namespace) -> int:
         ignore_eos=True,
         seed=0,
     )
-    llm.generate(["warmup prompt for backend regression"], warmup_sampling,
-                 use_tqdm=False)
+    llm.generate(
+        ["warmup prompt for backend regression"], warmup_sampling, use_tqdm=False
+    )
 
     quality = {}
     if quality_prompts:
@@ -381,49 +400,50 @@ def child_main(args: argparse.Namespace) -> int:
             ]
         else:
             scenarios = [
-            {
-                "name": "batch1_prefill512_decode1",
-                "lengths": [512],
-                "max_tokens": 1,
-                "iters": args.speed_iters,
-            },
-            {
-                "name": "batch1_prefill512_decode64",
-                "lengths": [512],
-                "max_tokens": 64,
-                "iters": args.speed_iters,
-            },
-            {
-                "name": "batch1_prefill_long_decode1",
-                "lengths": [args.long_prompt_tokens],
-                "max_tokens": 1,
-                "iters": args.speed_iters,
-            },
-            {
-                "name": "batch1_prefill_long_decode64",
-                "lengths": [args.long_prompt_tokens],
-                "max_tokens": 64,
-                "iters": args.speed_iters,
-            },
-            {
-                "name": "batch4_mixed_decode32",
-                "lengths": [64, 128, 256, 512],
-                "max_tokens": 32,
-                "iters": args.speed_iters,
-            },
-            {
-                "name": "batch4_decode_heavy128",
-                "lengths": [64, 64, 64, 64],
-                "max_tokens": 128,
-                "iters": max(2, args.speed_iters // 2),
-            },
+                {
+                    "name": "batch1_prefill512_decode1",
+                    "lengths": [512],
+                    "max_tokens": 1,
+                    "iters": args.speed_iters,
+                },
+                {
+                    "name": "batch1_prefill512_decode64",
+                    "lengths": [512],
+                    "max_tokens": 64,
+                    "iters": args.speed_iters,
+                },
+                {
+                    "name": "batch1_prefill_long_decode1",
+                    "lengths": [args.long_prompt_tokens],
+                    "max_tokens": 1,
+                    "iters": args.speed_iters,
+                },
+                {
+                    "name": "batch1_prefill_long_decode64",
+                    "lengths": [args.long_prompt_tokens],
+                    "max_tokens": 64,
+                    "iters": args.speed_iters,
+                },
+                {
+                    "name": "batch4_mixed_decode32",
+                    "lengths": [64, 128, 256, 512],
+                    "max_tokens": 32,
+                    "iters": args.speed_iters,
+                },
+                {
+                    "name": "batch4_decode_heavy128",
+                    "lengths": [64, 64, 64, 64],
+                    "max_tokens": 128,
+                    "iters": max(2, args.speed_iters // 2),
+                },
             ]
         for scenario in scenarios:
             prompts = [
                 maybe_apply_chat_template(
                     tokenizer,
-                    make_prompt_by_tokens(tokenizer, length,
-                                          f"{scenario['name']}-{idx}"),
+                    make_prompt_by_tokens(
+                        tokenizer, length, f"{scenario['name']}-{idx}"
+                    ),
                     args,
                 )
                 for idx, length in enumerate(scenario["lengths"])
@@ -441,13 +461,16 @@ def child_main(args: argparse.Namespace) -> int:
             output_tokens = []
             spec_before = (
                 spec_decode_metrics_snapshot(llm)
-                if speculative_config is not None else None)
+                if speculative_config is not None
+                else None
+            )
             for _ in range(scenario["iters"]):
                 start = time.perf_counter()
                 outputs = llm.generate(prompts, sampling, use_tqdm=False)
                 latencies.append(time.perf_counter() - start)
                 output_tokens.append(
-                    sum(len(out.outputs[0].token_ids) for out in outputs))
+                    sum(len(out.outputs[0].token_ids) for out in outputs)
+                )
             spec_metrics = None
             if spec_before is not None:
                 spec_metrics = diff_spec_decode_metrics(
@@ -490,26 +513,31 @@ def child_main(args: argparse.Namespace) -> int:
         "quality": quality,
         "speed": speed,
     }
-    args.child_output.write_text(json.dumps(result, indent=2, ensure_ascii=False),
-                                 encoding="utf-8")
+    args.child_output.write_text(
+        json.dumps(result, indent=2, ensure_ascii=False), encoding="utf-8"
+    )
     return 0
 
 
-def run_backend(args: argparse.Namespace, backend: str,
-                output_dir: Path) -> dict[str, Any]:
+def run_backend(
+    args: argparse.Namespace, backend: str, output_dir: Path
+) -> dict[str, Any]:
     child_json = output_dir / f"{backend}.json"
     child_log = output_dir / f"{backend}.log"
     env = os.environ.copy()
-    env.update({
-        "CUDA_DEVICE_ORDER": "PCI_BUS_ID",
-        "CUDA_VISIBLE_DEVICES": args.cuda_visible_devices,
-        "HF_HUB_OFFLINE": "1" if args.offline else env.get("HF_HUB_OFFLINE", "0"),
-        "TRANSFORMERS_OFFLINE": "1" if args.offline else env.get(
-            "TRANSFORMERS_OFFLINE", "0"),
-        "VLLM_USE_V1": "1",
-        "VLLM_ATTENTION_BACKEND": backend,
-        "VLLM_SM70_ENABLE_LM_HEAD_FASTPATH": "1",
-    })
+    env.update(
+        {
+            "CUDA_DEVICE_ORDER": "PCI_BUS_ID",
+            "CUDA_VISIBLE_DEVICES": args.cuda_visible_devices,
+            "HF_HUB_OFFLINE": "1" if args.offline else env.get("HF_HUB_OFFLINE", "0"),
+            "TRANSFORMERS_OFFLINE": "1"
+            if args.offline
+            else env.get("TRANSFORMERS_OFFLINE", "0"),
+            "VLLM_USE_V1": "1",
+            "VLLM_ATTENTION_BACKEND": backend,
+            "VLLM_SM70_ENABLE_LM_HEAD_FASTPATH": "1",
+        }
+    )
     cmd = [
         sys.executable,
         str(Path(__file__).resolve()),
@@ -583,15 +611,16 @@ def run_backend(args: argparse.Namespace, backend: str,
         )
     if proc.returncode != 0:
         raise RuntimeError(
-            f"{backend} child failed with exit code {proc.returncode}; "
-            f"see {child_log}")
+            f"{backend} child failed with exit code {proc.returncode}; see {child_log}"
+        )
     data = json.loads(child_json.read_text(encoding="utf-8"))
     data["log_path"] = str(child_log)
     return data
 
 
-def compare_top_tokens(a_top: list[dict[str, Any]],
-                       b_top: list[dict[str, Any]]) -> dict[str, Any]:
+def compare_top_tokens(
+    a_top: list[dict[str, Any]], b_top: list[dict[str, Any]]
+) -> dict[str, Any]:
     a_ids = [x["token_id"] for x in a_top]
     b_ids = [x["token_id"] for x in b_top]
     common = sorted(set(a_ids) & set(b_ids))
@@ -607,8 +636,7 @@ def compare_top_tokens(a_top: list[dict[str, Any]],
     }
 
 
-def compare_quality(flash: dict[str, Any],
-                    triton: dict[str, Any]) -> dict[str, Any]:
+def compare_quality(flash: dict[str, Any], triton: dict[str, Any]) -> dict[str, Any]:
     comparisons = {}
     failures = []
 
@@ -630,11 +658,12 @@ def compare_quality(flash: dict[str, Any],
         gen_deltas = []
         gen_nonfinite = 0
         top1_matches = []
-        for fa_lp, tr_lp in zip(fa["generated_logprobs"],
-                                tr["generated_logprobs"],
-                                strict=False):
-            delta, finite = valid_delta(fa_lp["selected_logprob"],
-                                        tr_lp["selected_logprob"])
+        for fa_lp, tr_lp in zip(
+            fa["generated_logprobs"], tr["generated_logprobs"], strict=False
+        ):
+            delta, finite = valid_delta(
+                fa_lp["selected_logprob"], tr_lp["selected_logprob"]
+            )
             if not finite:
                 gen_nonfinite += 1
             elif delta is not None:
@@ -645,32 +674,38 @@ def compare_quality(flash: dict[str, Any],
         prompt_top1_matches = []
         prompt_deltas = []
         prompt_nonfinite = 0
-        for fa_lp, tr_lp in zip(fa["prompt_logprob_samples"],
-                                tr["prompt_logprob_samples"],
-                                strict=False):
-            delta, finite = valid_delta(fa_lp["selected_logprob"],
-                                        tr_lp["selected_logprob"])
+        for fa_lp, tr_lp in zip(
+            fa["prompt_logprob_samples"], tr["prompt_logprob_samples"], strict=False
+        ):
+            delta, finite = valid_delta(
+                fa_lp["selected_logprob"], tr_lp["selected_logprob"]
+            )
             if not finite:
                 prompt_nonfinite += 1
             elif delta is not None:
                 prompt_deltas.append(delta)
             prompt_top1_matches.append(
-                compare_top_tokens(fa_lp["top"], tr_lp["top"])["top1_match"])
+                compare_top_tokens(fa_lp["top"], tr_lp["top"])["top1_match"]
+            )
 
         result = {
             "token_exact": token_exact,
             "text_exact": text_exact,
             "cumulative_logprob_delta": cum_delta,
             "max_generated_selected_logprob_delta": (
-                max(gen_deltas) if gen_deltas else None),
+                max(gen_deltas) if gen_deltas else None
+            ),
             "generated_top1_match_rate": (
-                sum(top1_matches) / len(top1_matches)
-                if top1_matches else None),
+                sum(top1_matches) / len(top1_matches) if top1_matches else None
+            ),
             "max_prompt_sample_selected_logprob_delta": (
-                max(prompt_deltas) if prompt_deltas else None),
+                max(prompt_deltas) if prompt_deltas else None
+            ),
             "prompt_sample_top1_match_rate": (
                 sum(prompt_top1_matches) / len(prompt_top1_matches)
-                if prompt_top1_matches else None),
+                if prompt_top1_matches
+                else None
+            ),
             "cumulative_logprob_finite": cum_finite,
             "generated_nonfinite_count": gen_nonfinite,
             "prompt_sample_nonfinite_count": prompt_nonfinite,
@@ -682,10 +717,14 @@ def compare_quality(flash: dict[str, Any],
             and gen_nonfinite == 0
             and prompt_nonfinite == 0
             and (cum_delta is None or cum_delta <= 0.25)
-            and (result["max_generated_selected_logprob_delta"] is None
-                 or result["max_generated_selected_logprob_delta"] <= 0.15)
-            and (result["generated_top1_match_rate"] is None
-                 or result["generated_top1_match_rate"] >= 0.95)
+            and (
+                result["max_generated_selected_logprob_delta"] is None
+                or result["max_generated_selected_logprob_delta"] <= 0.15
+            )
+            and (
+                result["generated_top1_match_rate"] is None
+                or result["generated_top1_match_rate"] >= 0.95
+            )
         )
         result["passed"] = passed
         comparisons[name] = result
@@ -694,8 +733,7 @@ def compare_quality(flash: dict[str, Any],
     return {"cases": comparisons, "failures": failures, "passed": not failures}
 
 
-def compare_speed(flash: dict[str, Any],
-                  triton: dict[str, Any]) -> dict[str, Any]:
+def compare_speed(flash: dict[str, Any], triton: dict[str, Any]) -> dict[str, Any]:
     cases = {}
     failures = []
     for name, fa in flash["speed"].items():
@@ -735,10 +773,12 @@ def parent_main(args: argparse.Namespace) -> int:
         print(f"running backend {backend} ...", flush=True)
         backend_results[backend] = run_backend(args, backend, output_dir)
 
-    quality = compare_quality(backend_results["FLASH_ATTN_V100"],
-                              backend_results["TRITON_ATTN"])
-    speed = compare_speed(backend_results["FLASH_ATTN_V100"],
-                          backend_results["TRITON_ATTN"])
+    quality = compare_quality(
+        backend_results["FLASH_ATTN_V100"], backend_results["TRITON_ATTN"]
+    )
+    speed = compare_speed(
+        backend_results["FLASH_ATTN_V100"], backend_results["TRITON_ATTN"]
+    )
     combined = {
         "model": args.model,
         "cuda_visible_devices": args.cuda_visible_devices,
@@ -747,8 +787,9 @@ def parent_main(args: argparse.Namespace) -> int:
         "speed_compare": speed,
     }
     combined_json = output_dir / "combined.json"
-    combined_json.write_text(json.dumps(combined, indent=2, ensure_ascii=False),
-                             encoding="utf-8")
+    combined_json.write_text(
+        json.dumps(combined, indent=2, ensure_ascii=False), encoding="utf-8"
+    )
 
     print(f"wrote {combined_json}")
     print(f"quality passed={quality['passed']} failures={quality['failures']}")
@@ -757,7 +798,8 @@ def parent_main(args: argparse.Namespace) -> int:
         print(
             f"{status} {name}: flash={case['flash_median_sec']:.4f}s "
             f"triton={case['triton_median_sec']:.4f}s "
-            f"speedup={case['speedup_vs_triton']:.3f}x")
+            f"speedup={case['speedup_vs_triton']:.3f}x"
+        )
     if quality["failures"] or speed["failures"]:
         return 2
     return 0
@@ -778,15 +820,14 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--kv-cache-auto-trim-ratio", type=float, default=1.05)
     parser.add_argument("--tensor-parallel-size", type=int, default=1)
     parser.add_argument("--disable-custom-all-reduce", action="store_true")
-    parser.add_argument("--speculative-method", choices=("dflash",),
-                        default=None)
+    parser.add_argument("--speculative-method", choices=("dflash",), default=None)
     parser.add_argument("--draft-model", default=None)
     parser.add_argument("--num-speculative-tokens", type=int, default=16)
     parser.add_argument("--draft-tensor-parallel-size", type=int, default=None)
-    parser.add_argument("--prompt-style", choices=("raw", "qwen35-chat"),
-                        default="raw")
-    parser.add_argument("--disable-thinking", action="store_false",
-                        dest="enable_thinking")
+    parser.add_argument("--prompt-style", choices=("raw", "qwen35-chat"), default="raw")
+    parser.add_argument(
+        "--disable-thinking", action="store_false", dest="enable_thinking"
+    )
     parser.add_argument("--disable-mm", action="store_true")
     parser.add_argument("--quality-max-tokens", type=int, default=32)
     parser.add_argument("--long-prompt-tokens", type=int, default=1536)
@@ -801,8 +842,9 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--skip-speed", action="store_true")
     parser.add_argument("--skip-quality", action="store_true")
     parser.add_argument("--trust-remote-code", action="store_true", default=True)
-    parser.add_argument("--no-trust-remote-code", action="store_false",
-                        dest="trust_remote_code")
+    parser.add_argument(
+        "--no-trust-remote-code", action="store_false", dest="trust_remote_code"
+    )
     parser.add_argument("--enforce-eager", action="store_true")
     parser.add_argument("--offline", action="store_true", default=True)
     parser.add_argument("--online", action="store_false", dest="offline")

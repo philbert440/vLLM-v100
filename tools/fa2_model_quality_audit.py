@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: Copyright contributors to the vLLM project
 """End-to-end model quality audit for FLASH_ATTN_V100.
 
 The audit uses objective, locally graded tasks so backend output drift is not
@@ -21,7 +22,6 @@ import sys
 import time
 from pathlib import Path
 from typing import Any
-
 
 DEFAULT_BACKENDS = ("FLASH_ATTN_V100", "TRITON_ATTN")
 
@@ -108,13 +108,15 @@ def fit_needle_prompt(
 ) -> tuple[str, int, int]:
     sample_units = [base_noise_unit(i) for i in range(128)]
     sample_prompt = apply_chat_template(
-        tokenizer, build_needle_prompt(sample_units, depth, code), args)
+        tokenizer, build_needle_prompt(sample_units, depth, code), args
+    )
     sample_tokens = max(1, token_count(tokenizer, sample_prompt))
     per_unit = max(1.0, (sample_tokens - 128) / 128.0)
     high = max(1, int(target_tokens / per_unit * 1.30) + 64)
     low = 1
     best_prompt = apply_chat_template(
-        tokenizer, build_needle_prompt([base_noise_unit(0)], depth, code), args)
+        tokenizer, build_needle_prompt([base_noise_unit(0)], depth, code), args
+    )
     best_tokens = token_count(tokenizer, best_prompt)
     best_units = 1
 
@@ -122,7 +124,8 @@ def fit_needle_prompt(
         mid = (low + high) // 2
         units = [base_noise_unit(i) for i in range(mid)]
         prompt = apply_chat_template(
-            tokenizer, build_needle_prompt(units, depth, code), args)
+            tokenizer, build_needle_prompt(units, depth, code), args
+        )
         count = token_count(tokenizer, prompt)
         if count <= target_tokens:
             best_prompt = prompt
@@ -167,10 +170,7 @@ def short_cases(tokenizer: Any, args: argparse.Namespace) -> list[dict[str, Any]
         {
             "id": "zh_instruction_keyword",
             "category": "instruction",
-            "prompt": (
-                "请只输出下面这段校验短语，不要解释："
-                "长上下文审计通过-蓝色"
-            ),
+            "prompt": ("请只输出下面这段校验短语，不要解释：长上下文审计通过-蓝色"),
             "grader": {
                 "type": "contains",
                 "expected": "长上下文审计通过-蓝色",
@@ -190,12 +190,14 @@ def short_cases(tokenizer: Any, args: argparse.Namespace) -> list[dict[str, Any]
     cases = []
     for item in raw_cases:
         prompt = apply_chat_template(tokenizer, item["prompt"], args)
-        cases.append({
-            **item,
-            "prompt": prompt,
-            "target_tokens": None,
-            "prompt_token_count_estimate": token_count(tokenizer, prompt),
-        })
+        cases.append(
+            {
+                **item,
+                "prompt": prompt,
+                "target_tokens": None,
+                "prompt_token_count_estimate": token_count(tokenizer, prompt),
+            }
+        )
     return cases
 
 
@@ -207,17 +209,20 @@ def long_needle_cases(tokenizer: Any, args: argparse.Namespace) -> list[dict[str
             suffix = "".join(rng.choices(string.ascii_uppercase + string.digits, k=8))
             code = f"QA{target_tokens}-{int(depth * 100):02d}-{suffix}"
             prompt, prompt_tokens, unit_count = fit_needle_prompt(
-                tokenizer, args, target_tokens, depth, code)
-            cases.append({
-                "id": f"needle_len{target_tokens}_depth{depth:.2f}",
-                "category": "long_needle",
-                "prompt": prompt,
-                "target_tokens": target_tokens,
-                "prompt_token_count_estimate": prompt_tokens,
-                "unit_count": unit_count,
-                "needle_depth": depth,
-                "grader": {"type": "contains", "expected": code},
-            })
+                tokenizer, args, target_tokens, depth, code
+            )
+            cases.append(
+                {
+                    "id": f"needle_len{target_tokens}_depth{depth:.2f}",
+                    "category": "long_needle",
+                    "prompt": prompt,
+                    "target_tokens": target_tokens,
+                    "prompt_token_count_estimate": prompt_tokens,
+                    "unit_count": unit_count,
+                    "needle_depth": depth,
+                    "grader": {"type": "contains", "expected": code},
+                }
+            )
     return cases
 
 
@@ -235,7 +240,7 @@ def find_json_object(text: str) -> Any | None:
     if start < 0 or end < start:
         return None
     try:
-        return json.loads(text[start:end + 1])
+        return json.loads(text[start : end + 1])
     except Exception:
         return None
 
@@ -254,7 +259,8 @@ def grade_output(text: str, grader: dict[str, Any]) -> dict[str, Any]:
         parsed = find_json_object(text)
         expected_fields = grader["fields"]
         passed = isinstance(parsed, dict) and all(
-            parsed.get(key) == value for key, value in expected_fields.items())
+            parsed.get(key) == value for key, value in expected_fields.items()
+        )
         return {
             "passed": bool(passed),
             "expected": expected_fields,
@@ -265,7 +271,7 @@ def grade_output(text: str, grader: dict[str, Any]) -> dict[str, Any]:
 
 def logprob_obj_to_dict(obj: Any) -> dict[str, Any]:
     return {
-        "logprob": float(getattr(obj, "logprob")),
+        "logprob": float(obj.logprob),
         "rank": getattr(obj, "rank", None),
         "decoded_token": getattr(obj, "decoded_token", None),
     }
@@ -279,17 +285,19 @@ def serialize_logprob_map(logprob_map: Any, limit: int = 8) -> list[dict[str, An
         row = {"token_id": int(token_id)}
         row.update(logprob_obj_to_dict(value))
         items.append(row)
-    items.sort(key=lambda row: (
-        row["rank"] if row["rank"] is not None else 1_000_000,
-        -row["logprob"],
-    ))
+    items.sort(
+        key=lambda row: (
+            row["rank"] if row["rank"] is not None else 1_000_000,
+            -row["logprob"],
+        )
+    )
     return items[:limit]
 
 
 def selected_logprob(logprob_map: Any, token_id: int) -> float | None:
     if not logprob_map or token_id not in logprob_map:
         return None
-    return float(getattr(logprob_map[token_id], "logprob"))
+    return float(logprob_map[token_id].logprob)
 
 
 def serialize_output(output: Any, include_prompt_token_ids: bool) -> dict[str, Any]:
@@ -301,11 +309,13 @@ def serialize_output(output: Any, include_prompt_token_ids: bool) -> dict[str, A
         logprob_map = None
         if completion.logprobs is not None and idx < len(completion.logprobs):
             logprob_map = completion.logprobs[idx]
-        generated_logprobs.append({
-            "token_id": token_id,
-            "selected_logprob": selected_logprob(logprob_map, token_id),
-            "top": serialize_logprob_map(logprob_map),
-        })
+        generated_logprobs.append(
+            {
+                "token_id": token_id,
+                "selected_logprob": selected_logprob(logprob_map, token_id),
+                "top": serialize_logprob_map(logprob_map),
+            }
+        )
     return {
         "prompt_token_ids": prompt_token_ids if include_prompt_token_ids else [],
         "prompt_token_count": len(prompt_token_ids),
@@ -314,7 +324,8 @@ def serialize_output(output: Any, include_prompt_token_ids: bool) -> dict[str, A
         "finish_reason": completion.finish_reason,
         "stop_reason": completion.stop_reason,
         "cumulative_logprob": (
-            None if completion.cumulative_logprob is None
+            None
+            if completion.cumulative_logprob is None
             else float(completion.cumulative_logprob)
         ),
         "generated_logprobs": generated_logprobs,
@@ -335,6 +346,7 @@ def output_has_nonfinite(output: dict[str, Any]) -> bool:
 
 def child_main(args: argparse.Namespace) -> int:
     from transformers import AutoTokenizer
+
     from vllm import LLM, SamplingParams
 
     tokenizer = AutoTokenizer.from_pretrained(
@@ -400,31 +412,36 @@ def child_main(args: argparse.Namespace) -> int:
         output = llm.generate([case["prompt"]], sampling, use_tqdm=False)[0]
         latency = time.perf_counter() - start
         serialized = serialize_output(
-            output, include_prompt_token_ids=not args.omit_prompt_token_ids)
+            output, include_prompt_token_ids=not args.omit_prompt_token_ids
+        )
         grade = grade_output(serialized["output_text"], case["grader"])
-        rows.append({
-            "id": case["id"],
-            "category": case["category"],
-            "target_tokens": case.get("target_tokens"),
-            "needle_depth": case.get("needle_depth"),
-            "prompt_token_count_estimate": case.get(
-                "prompt_token_count_estimate"),
-            "unit_count": case.get("unit_count"),
-            "grader": case["grader"],
-            "grade": grade,
-            "latency_sec": latency,
-            "nonfinite_logprob": output_has_nonfinite(serialized),
-            "output": serialized,
-        })
-        print(
-            json.dumps({
-                "backend": args.backend,
-                "case": case["id"],
-                "passed": grade["passed"],
+        rows.append(
+            {
+                "id": case["id"],
+                "category": case["category"],
+                "target_tokens": case.get("target_tokens"),
+                "needle_depth": case.get("needle_depth"),
+                "prompt_token_count_estimate": case.get("prompt_token_count_estimate"),
+                "unit_count": case.get("unit_count"),
+                "grader": case["grader"],
+                "grade": grade,
                 "latency_sec": latency,
-                "prompt_tokens": serialized["prompt_token_count"],
-                "output_prefix": normalize_text(serialized["output_text"])[:160],
-            }, ensure_ascii=False),
+                "nonfinite_logprob": output_has_nonfinite(serialized),
+                "output": serialized,
+            }
+        )
+        print(
+            json.dumps(
+                {
+                    "backend": args.backend,
+                    "case": case["id"],
+                    "passed": grade["passed"],
+                    "latency_sec": latency,
+                    "prompt_tokens": serialized["prompt_token_count"],
+                    "output_prefix": normalize_text(serialized["output_text"])[:160],
+                },
+                ensure_ascii=False,
+            ),
             flush=True,
         )
 
@@ -446,35 +463,37 @@ def child_main(args: argparse.Namespace) -> int:
             "passed": passed,
             "total": len(rows),
             "pass_rate": passed / len(rows),
-            "nonfinite_cases": [
-                row["id"] for row in rows if row["nonfinite_logprob"]
-            ],
-            "median_latency_sec": statistics.median(
-                row["latency_sec"] for row in rows),
+            "nonfinite_cases": [row["id"] for row in rows if row["nonfinite_logprob"]],
+            "median_latency_sec": statistics.median(row["latency_sec"] for row in rows),
         },
         "cases": rows,
     }
     args.child_output.parent.mkdir(parents=True, exist_ok=True)
     args.child_output.write_text(
-        json.dumps(payload, indent=2, ensure_ascii=False), encoding="utf-8")
+        json.dumps(payload, indent=2, ensure_ascii=False), encoding="utf-8"
+    )
     return 0 if passed == len(rows) else 2
 
 
-def run_backend(args: argparse.Namespace, backend: str,
-                output_dir: Path) -> dict[str, Any]:
+def run_backend(
+    args: argparse.Namespace, backend: str, output_dir: Path
+) -> dict[str, Any]:
     child_json = output_dir / f"{backend}.json"
     child_log = output_dir / f"{backend}.log"
     env = os.environ.copy()
-    env.update({
-        "CUDA_DEVICE_ORDER": "PCI_BUS_ID",
-        "CUDA_VISIBLE_DEVICES": args.cuda_visible_devices,
-        "HF_HUB_OFFLINE": "1" if args.offline else env.get("HF_HUB_OFFLINE", "0"),
-        "TRANSFORMERS_OFFLINE": "1" if args.offline else env.get(
-            "TRANSFORMERS_OFFLINE", "0"),
-        "VLLM_USE_V1": "1",
-        "VLLM_ATTENTION_BACKEND": backend,
-        "VLLM_SM70_ENABLE_LM_HEAD_FASTPATH": "1",
-    })
+    env.update(
+        {
+            "CUDA_DEVICE_ORDER": "PCI_BUS_ID",
+            "CUDA_VISIBLE_DEVICES": args.cuda_visible_devices,
+            "HF_HUB_OFFLINE": "1" if args.offline else env.get("HF_HUB_OFFLINE", "0"),
+            "TRANSFORMERS_OFFLINE": "1"
+            if args.offline
+            else env.get("TRANSFORMERS_OFFLINE", "0"),
+            "VLLM_USE_V1": "1",
+            "VLLM_ATTENTION_BACKEND": backend,
+            "VLLM_SM70_ENABLE_LM_HEAD_FASTPATH": "1",
+        }
+    )
     cmd = [
         sys.executable,
         str(Path(__file__).resolve()),
@@ -548,7 +567,8 @@ def run_backend(args: argparse.Namespace, backend: str,
     if not child_json.exists():
         raise RuntimeError(
             f"{backend} did not write {child_json}; exit={proc.returncode}; "
-            f"see {child_log}")
+            f"see {child_log}"
+        )
     data = json.loads(child_json.read_text(encoding="utf-8"))
     data["log_path"] = str(child_log)
     data["exit_code"] = proc.returncode
@@ -559,9 +579,7 @@ def compare_results(results: dict[str, dict[str, Any]]) -> dict[str, Any]:
     backend_names = list(results)
     by_backend = {}
     for backend, payload in results.items():
-        by_backend[backend] = {
-            row["id"]: row for row in payload["cases"]
-        }
+        by_backend[backend] = {row["id"]: row for row in payload["cases"]}
 
     comparison: dict[str, Any] = {
         "backend_summaries": {
@@ -601,9 +619,14 @@ def compare_results(results: dict[str, dict[str, Any]]) -> dict[str, Any]:
             "candidate_latency_sec": cand_row["latency_sec"],
         }
         comparison["case_comparisons"][case_id] = row
-        if reference == "FLASH_ATTN_V100" and not ref_pass and cand_pass:
-            fa2_unique_failures.append(case_id)
-        elif candidate == "FLASH_ATTN_V100" and not cand_pass and ref_pass:
+        if (
+            reference == "FLASH_ATTN_V100"
+            and not ref_pass
+            and cand_pass
+            or candidate == "FLASH_ATTN_V100"
+            and not cand_pass
+            and ref_pass
+        ):
             fa2_unique_failures.append(case_id)
         if ref_pass and not cand_pass:
             reference_unique_failures.append(case_id)
@@ -618,7 +641,8 @@ def compare_results(results: dict[str, dict[str, Any]]) -> dict[str, Any]:
 
 def parent_main(args: argparse.Namespace) -> int:
     output_dir = args.output_dir or Path(
-        f"/tmp/fa2_model_quality_audit_{time.strftime('%Y%m%d_%H%M%S')}")
+        f"/tmp/fa2_model_quality_audit_{time.strftime('%Y%m%d_%H%M%S')}"
+    )
     output_dir.mkdir(parents=True, exist_ok=True)
     backends = parse_csv_strings(args.backends)
     results = {}
@@ -635,19 +659,21 @@ def parent_main(args: argparse.Namespace) -> int:
     }
     combined_json = output_dir / "combined.json"
     combined_json.write_text(
-        json.dumps(combined, indent=2, ensure_ascii=False), encoding="utf-8")
+        json.dumps(combined, indent=2, ensure_ascii=False), encoding="utf-8"
+    )
     print(f"wrote {combined_json}")
     for backend in backends:
         summary = results[backend]["summary"]
         print(
             f"{backend}: {summary['passed']}/{summary['total']} "
             f"pass_rate={summary['pass_rate']:.3f} "
-            f"nonfinite={summary['nonfinite_cases']}")
+            f"nonfinite={summary['nonfinite_cases']}"
+        )
     if "fa2_unique_failures" in comparison:
         print(f"fa2_unique_failures={comparison['fa2_unique_failures']}")
         print(
-            "both_pass_but_token_diverged="
-            f"{comparison['both_pass_but_token_diverged']}")
+            f"both_pass_but_token_diverged={comparison['both_pass_but_token_diverged']}"
+        )
     return 0 if comparison.get("passed", True) else 2
 
 
@@ -666,10 +692,12 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--max-num-seqs", type=int, default=4)
     parser.add_argument("--max-num-batched-tokens", type=int, default=8192)
     parser.add_argument("--gpu-memory-utilization", type=float, default=0.90)
-    parser.add_argument("--prompt-style", choices=("raw", "qwen35-chat"),
-                        default="qwen35-chat")
-    parser.add_argument("--disable-thinking", action="store_false",
-                        dest="enable_thinking")
+    parser.add_argument(
+        "--prompt-style", choices=("raw", "qwen35-chat"), default="qwen35-chat"
+    )
+    parser.add_argument(
+        "--disable-thinking", action="store_false", dest="enable_thinking"
+    )
     parser.add_argument("--disable-mm", action="store_true")
     parser.add_argument("--include-short", action="store_true")
     parser.add_argument("--target-lengths", default="8192,32768")
@@ -681,8 +709,9 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--seed", type=int, default=20260508)
     parser.add_argument("--omit-prompt-token-ids", action="store_true")
     parser.add_argument("--trust-remote-code", action="store_true", default=True)
-    parser.add_argument("--no-trust-remote-code", action="store_false",
-                        dest="trust_remote_code")
+    parser.add_argument(
+        "--no-trust-remote-code", action="store_false", dest="trust_remote_code"
+    )
     parser.add_argument("--enforce-eager", action="store_true")
     parser.add_argument("--warmup", action="store_true", default=True)
     parser.add_argument("--no-warmup", action="store_false", dest="warmup")

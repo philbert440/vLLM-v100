@@ -1,15 +1,17 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: Copyright contributors to the vLLM project
 """Small authenticated reverse proxy for an OpenAI-compatible local server."""
 
 from __future__ import annotations
 
 import argparse
+import contextlib
 import http.client
 import os
 import sys
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlparse
-
 
 HOP_BY_HOP_HEADERS = {
     "connection",
@@ -151,18 +153,14 @@ class ProxyHandler(BaseHTTPRequestHandler):
         self.send_header("Access-Control-Allow-Methods", "GET, POST, HEAD, OPTIONS")
 
     def _force_close_client(self) -> None:
-        try:
+        with contextlib.suppress(OSError):
             self.connection.shutdown(2)
-        except OSError:
-            pass
-        try:
+        with contextlib.suppress(OSError):
             self.connection.close()
-        except OSError:
-            pass
 
     def _write_http_chunk(self, chunk: bytes) -> None:
         if chunk:
-            self.wfile.write(("%x\r\n" % len(chunk)).encode("ascii"))
+            self.wfile.write(("{:x}\r\n".format(len(chunk))).encode("ascii"))
             self.wfile.write(chunk)
             self.wfile.write(b"\r\n")
         else:
@@ -170,7 +168,7 @@ class ProxyHandler(BaseHTTPRequestHandler):
         self.wfile.flush()
 
     def log_message(self, fmt: str, *args: object) -> None:
-        sys.stderr.write("%s - %s\n" % (self.address_string(), fmt % args))
+        sys.stderr.write("{} - {}\n".format(self.address_string(), fmt % args))
 
 
 def parse_args() -> argparse.Namespace:

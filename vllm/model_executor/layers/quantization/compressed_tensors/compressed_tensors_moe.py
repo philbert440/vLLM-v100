@@ -207,7 +207,8 @@ class CompressedTensorsMoEMethod(FusedMoEMethodBase):
                 if sm70_ok:
                     logger.info_once(
                         "Using CompressedTensorsSM70WNA16MoEMethod "
-                        "(TurboMind SM70 kernels)")
+                        "(TurboMind SM70 kernels)"
+                    )
                     return CompressedTensorsSM70WNA16MoEMethod(
                         weight_quant, input_quant, layer.moe_config
                     )
@@ -218,7 +219,8 @@ class CompressedTensorsMoEMethod(FusedMoEMethodBase):
                         f"(hidden={hidden}, inter={inter}, "
                         f"group_size={gs}, "
                         f"symmetric={weight_quant.symmetric}). "
-                        "Falling back to WNA16MoE.")
+                        "Falling back to WNA16MoE."
+                    )
 
             # Prefer to use the MarlinMoE kernel when it is supported.
             if (
@@ -2060,26 +2062,32 @@ class CompressedTensorsSM70WNA16MoEMethod(CompressedTensorsMoEMethod):
         CT pack-quantized: packing along input dim, sequential order.
         Shapes use is_transposed=True so FusedMoE weight_loader works.
         """
-        extra_weight_attrs.update(
-            {"is_transposed": True, "quant_method": "group"}
-        )
+        extra_weight_attrs.update({"is_transposed": True, "quant_method": "group"})
         w13_num_shards = 2 if self.moe.is_act_and_mul else 1
         pf = self.packed_factor
 
         # qweight: [E, K/pack, 2N] and [E, N/pack, K]
         w13_weight = torch.nn.Parameter(
-            torch.empty(num_experts, hidden_size // pf,
-                        w13_num_shards * intermediate_size_per_partition,
-                        dtype=torch.int32),
-            requires_grad=False)
+            torch.empty(
+                num_experts,
+                hidden_size // pf,
+                w13_num_shards * intermediate_size_per_partition,
+                dtype=torch.int32,
+            ),
+            requires_grad=False,
+        )
         layer.register_parameter("w13_weight_packed", w13_weight)
         set_weight_attrs(w13_weight, extra_weight_attrs)
 
         w2_weight = torch.nn.Parameter(
-            torch.empty(num_experts,
-                        intermediate_size_per_partition // pf,
-                        hidden_size, dtype=torch.int32),
-            requires_grad=False)
+            torch.empty(
+                num_experts,
+                intermediate_size_per_partition // pf,
+                hidden_size,
+                dtype=torch.int32,
+            ),
+            requires_grad=False,
+        )
         layer.register_parameter("w2_weight_packed", w2_weight)
         set_weight_attrs(w2_weight, extra_weight_attrs)
 
@@ -2089,55 +2097,67 @@ class CompressedTensorsSM70WNA16MoEMethod(CompressedTensorsMoEMethod):
         num_groups_w2 = intermediate_size_per_partition // gs
 
         w13_scale = torch.nn.Parameter(
-            torch.ones(num_experts, num_groups_w13,
-                       w13_num_shards * intermediate_size_per_partition,
-                       dtype=params_dtype),
-            requires_grad=False)
+            torch.ones(
+                num_experts,
+                num_groups_w13,
+                w13_num_shards * intermediate_size_per_partition,
+                dtype=params_dtype,
+            ),
+            requires_grad=False,
+        )
         layer.register_parameter("w13_weight_scale", w13_scale)
         set_weight_attrs(w13_scale, extra_weight_attrs)
 
         w2_scale = torch.nn.Parameter(
-            torch.ones(num_experts, num_groups_w2, hidden_size,
-                       dtype=params_dtype),
-            requires_grad=False)
+            torch.ones(num_experts, num_groups_w2, hidden_size, dtype=params_dtype),
+            requires_grad=False,
+        )
         layer.register_parameter("w2_weight_scale", w2_scale)
         set_weight_attrs(w2_scale, extra_weight_attrs)
         set_weight_attrs(w2_scale, {"load_full_w2": False})
 
         # weight_shape for CT format
         w2_weight_shape = torch.nn.Parameter(
-            torch.empty(num_experts, 2), requires_grad=False)
+            torch.empty(num_experts, 2), requires_grad=False
+        )
         layer.register_parameter("w2_weight_shape", w2_weight_shape)
         set_weight_attrs(w2_weight_shape, extra_weight_attrs)
         w13_weight_shape = torch.nn.Parameter(
-            torch.empty(num_experts, 2), requires_grad=False)
+            torch.empty(num_experts, 2), requires_grad=False
+        )
         layer.register_parameter("w13_weight_shape", w13_weight_shape)
         set_weight_attrs(w13_weight_shape, extra_weight_attrs)
 
         # g_idx / sort_indices (CT format requires these)
         w13_g_idx = torch.nn.Parameter(
             torch.empty(num_experts, hidden_size, dtype=torch.int32),
-            requires_grad=False)
+            requires_grad=False,
+        )
         layer.register_parameter("w13_weight_g_idx", w13_g_idx)
         set_weight_attrs(w13_g_idx, extra_weight_attrs)
 
         w2_g_idx = torch.nn.Parameter(
-            torch.empty(num_experts, intermediate_size_per_partition,
-                        dtype=torch.int32),
-            requires_grad=False)
+            torch.empty(
+                num_experts, intermediate_size_per_partition, dtype=torch.int32
+            ),
+            requires_grad=False,
+        )
         layer.register_parameter("w2_weight_g_idx", w2_g_idx)
         set_weight_attrs(w2_g_idx, extra_weight_attrs)
 
         w13_g_idx_sort = torch.nn.Parameter(
             torch.empty(num_experts, hidden_size, dtype=torch.int32),
-            requires_grad=False)
+            requires_grad=False,
+        )
         layer.register_parameter("w13_g_idx_sort_indices", w13_g_idx_sort)
         set_weight_attrs(w13_g_idx_sort, extra_weight_attrs)
 
         w2_g_idx_sort = torch.nn.Parameter(
-            torch.empty(num_experts, intermediate_size_per_partition,
-                        dtype=torch.int32),
-            requires_grad=False)
+            torch.empty(
+                num_experts, intermediate_size_per_partition, dtype=torch.int32
+            ),
+            requires_grad=False,
+        )
         layer.register_parameter("w2_g_idx_sort_indices", w2_g_idx_sort)
         set_weight_attrs(w2_g_idx_sort, extra_weight_attrs)
 
@@ -2153,8 +2173,7 @@ class CompressedTensorsSM70WNA16MoEMethod(CompressedTensorsMoEMethod):
         X = X_div_8 * 8
 
         # Unpack CT: each int32 → 8 sequential uint4 along dim1
-        unpacked = torch.zeros(E, X, Y, dtype=torch.uint8,
-                               device=ct_packed.device)
+        unpacked = torch.zeros(E, X, Y, dtype=torch.uint8, device=ct_packed.device)
         tmp = ct_packed.clone()
         for i in range(8):
             unpacked[:, i::8, :] = (tmp & 0xF).to(torch.uint8)
@@ -2168,8 +2187,7 @@ class CompressedTensorsSM70WNA16MoEMethod(CompressedTensorsMoEMethod):
         grouped = unpacked.view(E, X, -1, 8)  # [E, X, Y/8, 8]
         result = grouped[:, :, :, awq_pack_order[7]].to(torch.int32)
         for i in range(6, -1, -1):
-            result = (result << 4) | grouped[:, :, :, awq_pack_order[i]].to(
-                torch.int32)
+            result = (result << 4) | grouped[:, :, :, awq_pack_order[i]].to(torch.int32)
         return result  # [E, X, Y/8]
 
     def process_weights_after_loading(self, layer: torch.nn.Module) -> None:
@@ -2184,8 +2202,9 @@ class CompressedTensorsSM70WNA16MoEMethod(CompressedTensorsMoEMethod):
         num_experts = layer.w13_weight_packed.shape[0]
         device = layer.w13_weight_packed.device
 
-        logger.info("SM70 CT→AWQ: converting %d experts (group_size=%d)",
-                    num_experts, gs)
+        logger.info(
+            "SM70 CT→AWQ: converting %d experts (group_size=%d)", num_experts, gs
+        )
 
         # --- Convert qweight: CT [E, X/8, Y] → AWQ [E, X, Y/8] ---
         w13_qweight = self._ct_to_awq_qweight(layer.w13_weight_packed.data)
@@ -2200,12 +2219,12 @@ class CompressedTensorsSM70WNA16MoEMethod(CompressedTensorsMoEMethod):
         _zp = torch.tensor([0x88888888], dtype=torch.uint32).view(torch.int32).item()
         E_w13, K_gs_w13, N2_w13 = w13_scales.shape
         w13_qzeros = torch.full(
-            (E_w13, K_gs_w13, N2_w13 // pf),
-            _zp, dtype=torch.int32, device=device)
+            (E_w13, K_gs_w13, N2_w13 // pf), _zp, dtype=torch.int32, device=device
+        )
         E_w2, N_gs_w2, K_w2 = w2_scales.shape
         w2_qzeros = torch.full(
-            (E_w2, N_gs_w2, K_w2 // pf),
-            _zp, dtype=torch.int32, device=device)
+            (E_w2, N_gs_w2, K_w2 // pf), _zp, dtype=torch.int32, device=device
+        )
 
         # --- TurboMind prepare per expert ---
         w13_tm_w, w13_tm_s, w13_meta = [], [], []
@@ -2213,34 +2232,43 @@ class CompressedTensorsSM70WNA16MoEMethod(CompressedTensorsMoEMethod):
 
         for e in range(num_experts):
             r13 = ops.awq_sm70_prepare(
-                w13_qweight[e], w13_scales[e], w13_qzeros[e], gs,
-                interleave_gated_silu=True)
+                w13_qweight[e],
+                w13_scales[e],
+                w13_qzeros[e],
+                gs,
+                interleave_gated_silu=True,
+            )
             w13_tm_w.append(r13[0])
             w13_tm_s.append(r13[1])
             w13_meta.append(r13[2])
 
-            r2 = ops.awq_sm70_prepare(
-                w2_qweight[e], w2_scales[e], w2_qzeros[e], gs)
+            r2 = ops.awq_sm70_prepare(w2_qweight[e], w2_scales[e], w2_qzeros[e], gs)
             w2_tm_w.append(r2[0])
             w2_tm_s.append(r2[1])
             w2_meta.append(r2[2])
 
         # --- Store TurboMind weights as parameters ---
         layer.w13_tm_weight = torch.nn.Parameter(
-            torch.stack(w13_tm_w), requires_grad=False)
+            torch.stack(w13_tm_w), requires_grad=False
+        )
         layer.w13_tm_scales = torch.nn.Parameter(
-            torch.stack(w13_tm_s), requires_grad=False)
+            torch.stack(w13_tm_s), requires_grad=False
+        )
         layer.w2_tm_weight = torch.nn.Parameter(
-            torch.stack(w2_tm_w), requires_grad=False)
+            torch.stack(w2_tm_w), requires_grad=False
+        )
         layer.w2_tm_scales = torch.nn.Parameter(
-            torch.stack(w2_tm_s), requires_grad=False)
+            torch.stack(w2_tm_s), requires_grad=False
+        )
 
         layer.w13_meta_list = [
             (int(w13_meta[i][0].item()), int(w13_meta[i][1].item()))
-            for i in range(num_experts)]
+            for i in range(num_experts)
+        ]
         layer.w2_meta_list = [
             (int(w2_meta[i][0].item()), int(w2_meta[i][1].item()))
-            for i in range(num_experts)]
+            for i in range(num_experts)
+        ]
         layer.sm70_num_experts = num_experts
 
         # Dimensions for batched GEMM
@@ -2264,31 +2292,38 @@ class CompressedTensorsSM70WNA16MoEMethod(CompressedTensorsMoEMethod):
         w2_k_ld, w2_q_ld = layer.w2_meta_list[0]
         try:
             w13_ptrs = ops.awq_moe_build_strided_ptrs(
-                layer.w13_tm_weight, layer.w13_tm_scales,
-                w13_k_ld, w13_q_ld, num_experts)
+                layer.w13_tm_weight,
+                layer.w13_tm_scales,
+                w13_k_ld,
+                w13_q_ld,
+                num_experts,
+            )
             w2_ptrs = ops.awq_moe_build_strided_ptrs(
-                layer.w2_tm_weight, layer.w2_tm_scales,
-                w2_k_ld, w2_q_ld, num_experts)
+                layer.w2_tm_weight, layer.w2_tm_scales, w2_k_ld, w2_q_ld, num_experts
+            )
             layer.w13_strided_ptrs_w = torch.nn.Parameter(
-                w13_ptrs[0], requires_grad=False)
+                w13_ptrs[0], requires_grad=False
+            )
             layer.w13_strided_ptrs_s = torch.nn.Parameter(
-                w13_ptrs[1], requires_grad=False)
+                w13_ptrs[1], requires_grad=False
+            )
             layer.w2_strided_ptrs_w = torch.nn.Parameter(
-                w2_ptrs[0], requires_grad=False)
+                w2_ptrs[0], requires_grad=False
+            )
             layer.w2_strided_ptrs_s = torch.nn.Parameter(
-                w2_ptrs[1], requires_grad=False)
+                w2_ptrs[1], requires_grad=False
+            )
             layer.w13_strided_ptrs_w_rows = layer.w13_strided_ptrs_w.view(
-                num_experts, -1)
+                num_experts, -1
+            )
             layer.w13_strided_ptrs_s_rows = layer.w13_strided_ptrs_s.view(
-                num_experts, -1)
-            layer.w2_strided_ptrs_w_rows = layer.w2_strided_ptrs_w.view(
-                num_experts, -1)
-            layer.w2_strided_ptrs_s_rows = layer.w2_strided_ptrs_s.view(
-                num_experts, -1)
+                num_experts, -1
+            )
+            layer.w2_strided_ptrs_w_rows = layer.w2_strided_ptrs_w.view(num_experts, -1)
+            layer.w2_strided_ptrs_s_rows = layer.w2_strided_ptrs_s.view(num_experts, -1)
             layer.sm70_ptr_row_bytes = layer.w13_strided_ptrs_w_rows.shape[1]
             layer.sm70_batched_ready = True
-            logger.info("SM70 CT MoE: batched GEMM enabled (%d experts)",
-                        num_experts)
+            logger.info("SM70 CT MoE: batched GEMM enabled (%d experts)", num_experts)
         except Exception as e:
             layer.sm70_batched_ready = False
             layer.sm70_ptr_row_bytes = 0
@@ -2305,67 +2340,87 @@ class CompressedTensorsSM70WNA16MoEMethod(CompressedTensorsMoEMethod):
         layer._buf_max_slots = max_slots
         layer._buf_top_k = top_k
         layer._buf_expert_counts = torch.empty(
-            num_experts, dtype=torch.int32, device=device)
+            num_experts, dtype=torch.int32, device=device
+        )
         layer._buf_expert_offsets = torch.empty(
-            num_experts + 1, dtype=torch.int32, device=device)
+            num_experts + 1, dtype=torch.int32, device=device
+        )
         layer._buf_expert_offsets64 = torch.empty(
-            num_experts + 1, dtype=torch.int64, device=device)
+            num_experts + 1, dtype=torch.int64, device=device
+        )
         layer._buf_gate_up = torch.empty(
-            max_slots, layer.sm70_w13_n_dim,
-            dtype=torch.float16, device=device)
+            max_slots, layer.sm70_w13_n_dim, dtype=torch.float16, device=device
+        )
         layer._buf_intermediate = torch.empty(
-            max_slots, intermediate_size,
-            dtype=torch.float16, device=device)
+            max_slots, intermediate_size, dtype=torch.float16, device=device
+        )
         layer._buf_permuted_input = torch.empty(
-            max_slots, hidden_size, dtype=torch.float16, device=device)
+            max_slots, hidden_size, dtype=torch.float16, device=device
+        )
         layer._buf_sorted_output = torch.empty(
-            max_slots, hidden_size, dtype=torch.float16, device=device)
+            max_slots, hidden_size, dtype=torch.float16, device=device
+        )
         layer._buf_inv_permuted_idx = torch.empty(
-            persistent_tokens, top_k, dtype=torch.int32, device=device)
+            persistent_tokens, top_k, dtype=torch.int32, device=device
+        )
         layer._buf_topk_ids_i32 = torch.empty(
-            persistent_tokens, top_k, dtype=torch.int32, device=device)
+            persistent_tokens, top_k, dtype=torch.int32, device=device
+        )
         layer._buf_token_expert_indices = torch.arange(
-            max_slots, dtype=torch.int32, device=device).view(
-                persistent_tokens, top_k)
+            max_slots, dtype=torch.int32, device=device
+        ).view(persistent_tokens, top_k)
         layer._buf_permuted_idx = torch.empty(
-            max_slots, dtype=torch.int32, device=device)
-        layer._buf_m_indices = torch.empty(
-            max_slots, dtype=torch.int32, device=device)
+            max_slots, dtype=torch.int32, device=device
+        )
+        layer._buf_m_indices = torch.empty(max_slots, dtype=torch.int32, device=device)
         layer._buf_output = torch.empty(
-            persistent_tokens, hidden_size,
-            dtype=torch.float16, device=device)
-        layer._buf_ones = torch.ones(
-            max_slots, dtype=torch.int32, device=device)
+            persistent_tokens, hidden_size, dtype=torch.float16, device=device
+        )
+        layer._buf_ones = torch.ones(max_slots, dtype=torch.int32, device=device)
         if layer.sm70_batched_ready:
             ptr_row = layer.sm70_ptr_row_bytes
             layer._buf_single_topk_ids_i64 = torch.empty(
-                top_k, dtype=torch.int64, device=device)
+                top_k, dtype=torch.int64, device=device
+            )
             layer._buf_single_w13_ptrs_w = torch.empty(
-                top_k, ptr_row, dtype=torch.uint8, device=device)
+                top_k, ptr_row, dtype=torch.uint8, device=device
+            )
             layer._buf_single_w13_ptrs_s = torch.empty(
-                top_k, ptr_row, dtype=torch.uint8, device=device)
+                top_k, ptr_row, dtype=torch.uint8, device=device
+            )
             layer._buf_single_w2_ptrs_w = torch.empty(
-                top_k, ptr_row, dtype=torch.uint8, device=device)
+                top_k, ptr_row, dtype=torch.uint8, device=device
+            )
             layer._buf_single_w2_ptrs_s = torch.empty(
-                top_k, ptr_row, dtype=torch.uint8, device=device)
+                top_k, ptr_row, dtype=torch.uint8, device=device
+            )
             layer._buf_single_expert_offsets = torch.arange(
-                top_k + 1, dtype=torch.int32, device=device)
+                top_k + 1, dtype=torch.int32, device=device
+            )
             layer._buf_single_expert_offsets64 = torch.arange(
-                top_k + 1, dtype=torch.int64, device=device)
+                top_k + 1, dtype=torch.int64, device=device
+            )
             layer._buf_single_inv_permuted_idx = torch.arange(
-                top_k, dtype=torch.int32, device=device).view(1, top_k)
+                top_k, dtype=torch.int32, device=device
+            ).view(1, top_k)
 
         # Free original CT weights
-        for attr in ("w13_weight_packed", "w13_weight_scale",
-                     "w2_weight_packed", "w2_weight_scale",
-                     "w13_weight_shape", "w2_weight_shape",
-                     "w13_weight_g_idx", "w2_weight_g_idx",
-                     "w13_g_idx_sort_indices", "w2_g_idx_sort_indices"):
+        for attr in (
+            "w13_weight_packed",
+            "w13_weight_scale",
+            "w2_weight_packed",
+            "w2_weight_scale",
+            "w13_weight_shape",
+            "w2_weight_shape",
+            "w13_weight_g_idx",
+            "w2_weight_g_idx",
+            "w13_g_idx_sort_indices",
+            "w2_g_idx_sort_indices",
+        ):
             if hasattr(layer, attr):
                 delattr(layer, attr)
 
-        logger.info("SM70 CT→AWQ conversion complete for %d experts",
-                    num_experts)
+        logger.info("SM70 CT→AWQ conversion complete for %d experts", num_experts)
 
     def _ensure_buffers(self, layer: torch.nn.Module, total_slots: int):
         if total_slots <= layer._buf_max_slots:
@@ -2373,8 +2428,11 @@ class CompressedTensorsSM70WNA16MoEMethod(CompressedTensorsMoEMethod):
         device = layer._buf_expert_counts.device
         layer._buf_max_slots = total_slots
         layer._buf_intermediate = torch.empty(
-            total_slots, layer.sm70_intermediate_size,
-            dtype=torch.float16, device=device)
+            total_slots,
+            layer.sm70_intermediate_size,
+            dtype=torch.float16,
+            device=device,
+        )
 
     def apply(
         self,
@@ -2388,6 +2446,7 @@ class CompressedTensorsSM70WNA16MoEMethod(CompressedTensorsMoEMethod):
             from vllm.model_executor.layers.quantization.awq_sm70_moe import (
                 AWQSM70MoEMethod,
             )
+
             self._awq_moe = AWQSM70MoEMethod(
                 weight_bits=self.num_bits,
                 group_size=self.group_size,
