@@ -22,6 +22,7 @@ from vllm.v1.kv_cache_interface import (
     KVCacheSpec,
     UniformTypeKVCacheSpecs,
 )
+
 # NOTE(rivet): upstream keeps SpecDecodeBaseProposer in v1/spec_decode/
 # llm_base_proposer; this base keeps it in eagle.py. Redirect accordingly.
 from vllm.v1.spec_decode.eagle import SpecDecodeBaseProposer

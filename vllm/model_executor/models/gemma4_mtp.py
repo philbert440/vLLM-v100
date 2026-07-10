@@ -649,4 +649,7 @@ class Gemma4MTP(nn.Module):
                 continue
             remaining.append((name, w))
         loader = AutoWeightsLoader(self)
-        return loader.load_weights(remaining, mapper=self.hf_to_vllm_mapper) | loaded_buffers
+        return (
+            loader.load_weights(remaining, mapper=self.hf_to_vllm_mapper)
+            | loaded_buffers
+        )

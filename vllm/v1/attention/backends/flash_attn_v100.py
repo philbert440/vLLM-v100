@@ -9,6 +9,7 @@ Decode uses a paged Flash V100 kernel that reads vLLM's KV cache directly.
 from __future__ import annotations
 
 import os
+
 import torch
 
 from vllm.logger import init_logger
@@ -53,12 +54,17 @@ _PAGED_PREFILL_BASE_SMEM = {64: 81408, 128: 97792, 256: 93952, 512: 85888}
 def _get_flash_ops():
     """Lazy-load flash_attn_v100 ops if available."""
     global _flash_attn_func, _flash_attn_decode_paged, _flash_attn_prefill_paged
-    if (_flash_attn_func is None or _flash_attn_decode_paged is None
-            or _flash_attn_prefill_paged is None):
+    if (
+        _flash_attn_func is None
+        or _flash_attn_decode_paged is None
+        or _flash_attn_prefill_paged is None
+    ):
         try:
-            from flash_attn_v100 import (flash_attn_decode_paged,
-                                         flash_attn_func,
-                                         flash_attn_prefill_paged)
+            from flash_attn_v100 import (
+                flash_attn_decode_paged,
+                flash_attn_func,
+                flash_attn_prefill_paged,
+            )
 
             _flash_attn_func = flash_attn_func
             _flash_attn_decode_paged = flash_attn_decode_paged
@@ -127,12 +133,15 @@ def _extract_contiguous_kv_from_paged_cache(
     if paged_kv_utils is not None and key_cache.dtype != torch.uint8:
         if hasattr(paged_kv_utils, "paged_kv_to_contiguous"):
             k_cont, v_cont = paged_kv_utils.paged_kv_to_contiguous(
-                key_cache, value_cache, block_table, seq_lens)
+                key_cache, value_cache, block_table, seq_lens
+            )
         else:
-            k_cont = paged_kv_utils.paged_to_contiguous(key_cache, block_table,
-                                                        seq_lens)
-            v_cont = paged_kv_utils.paged_to_contiguous(value_cache, block_table,
-                                                        seq_lens)
+            k_cont = paged_kv_utils.paged_to_contiguous(
+                key_cache, block_table, seq_lens
+            )
+            v_cont = paged_kv_utils.paged_to_contiguous(
+                value_cache, block_table, seq_lens
+            )
         if total_tokens is None:
             total_tokens = int(seq_lens.sum().item())
         return k_cont[:total_tokens], v_cont[:total_tokens]
@@ -166,8 +175,10 @@ def _extract_contiguous_kv_from_paged_cache(
             end_token = min(start_token + block_size, seq_len)
             n = end_token - start_token
 
-            k_cont[token_offset:token_offset + n] = key_cache[physical_block_idx, :n]
-            v_cont[token_offset:token_offset + n] = value_cache[physical_block_idx, :n]
+            k_cont[token_offset : token_offset + n] = key_cache[physical_block_idx, :n]
+            v_cont[token_offset : token_offset + n] = value_cache[
+                physical_block_idx, :n
+            ]
             token_offset += n
 
     return k_cont, v_cont
@@ -218,7 +229,9 @@ class FlashAttnV100MetadataBuilder(TritonAttentionMetadataBuilder):
         return attn_metadata
 
     def build(self, common_prefix_len, common_attn_metadata, fast_build: bool = False):
-        attn_metadata = super().build(common_prefix_len, common_attn_metadata, fast_build)
+        attn_metadata = super().build(
+            common_prefix_len, common_attn_metadata, fast_build
+        )
         attn_metadata.query_start_loc_cpu = common_attn_metadata.query_start_loc_cpu
         attn_metadata.seq_lens_cpu = common_attn_metadata.seq_lens_cpu
         attn_metadata.causal = common_attn_metadata.causal
@@ -231,8 +244,11 @@ class FlashAttnV100Impl(TritonAttentionImpl):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        (self.flash_attn_func, self.flash_attn_decode_paged,
-         self.flash_attn_prefill_paged) = _get_flash_ops()
+        (
+            self.flash_attn_func,
+            self.flash_attn_decode_paged,
+            self.flash_attn_prefill_paged,
+        ) = _get_flash_ops()
         # V100 FA2 kernels consume fp16 Q. FP8 KV cache support is implemented
         # as storage compression only, with K/V dequantized inside FA2 kernels.
         self.supports_quant_query_input = False
@@ -240,16 +256,19 @@ class FlashAttnV100Impl(TritonAttentionImpl):
         self.use_flash_v100_decode = self.flash_attn_decode_paged is not None
         paged_prefill_enable = os.getenv("VLLM_FLASH_V100_ENABLE_PAGED_PREFILL")
         paged_prefill_disable = (
-            os.getenv("VLLM_FLASH_V100_DISABLE_PAGED_PREFILL", "0") == "1")
+            os.getenv("VLLM_FLASH_V100_DISABLE_PAGED_PREFILL", "0") == "1"
+        )
         self.use_flash_v100_prefill_paged = (
             self.flash_attn_prefill_paged is not None
             and paged_prefill_enable != "0"
-            and not paged_prefill_disable)
+            and not paged_prefill_disable
+        )
         self.smallq_decode_max_query_len = int(
-            os.getenv("VLLM_FLASH_V100_SMALLQ_DECODE_MAX_Q", "16"))
+            os.getenv("VLLM_FLASH_V100_SMALLQ_DECODE_MAX_Q", "16")
+        )
         self.smallq_decode_max_model_len = int(
-            os.getenv("VLLM_FLASH_V100_SMALLQ_DECODE_MAX_MODEL_LEN",
-                      "0"))
+            os.getenv("VLLM_FLASH_V100_SMALLQ_DECODE_MAX_MODEL_LEN", "0")
+        )
         self._decode_cache_k: torch.Tensor | None = None
         self._decode_cache_v: torch.Tensor | None = None
         self._decode_cache_len = 0
@@ -297,11 +316,11 @@ class FlashAttnV100Impl(TritonAttentionImpl):
             and self._decode_cache_v is not None
             and self._decode_cache_len > 0
         ):
-            new_k[:self._decode_cache_len].copy_(
-                self._decode_cache_k[:self._decode_cache_len]
+            new_k[: self._decode_cache_len].copy_(
+                self._decode_cache_k[: self._decode_cache_len]
             )
-            new_v[:self._decode_cache_len].copy_(
-                self._decode_cache_v[:self._decode_cache_len]
+            new_v[: self._decode_cache_len].copy_(
+                self._decode_cache_v[: self._decode_cache_len]
             )
 
         self._decode_cache_k = new_k
@@ -365,8 +384,8 @@ class FlashAttnV100Impl(TritonAttentionImpl):
         )
         assert self._decode_cache_k is not None
         assert self._decode_cache_v is not None
-        self._decode_cache_k[self._decode_cache_len:seq_len].copy_(key[:q_len])
-        self._decode_cache_v[self._decode_cache_len:seq_len].copy_(value[:q_len])
+        self._decode_cache_k[self._decode_cache_len : seq_len].copy_(key[:q_len])
+        self._decode_cache_v[self._decode_cache_len : seq_len].copy_(value[:q_len])
         self._decode_cache_len = seq_len
         return (
             self._decode_cache_k[:seq_len],
@@ -375,16 +394,14 @@ class FlashAttnV100Impl(TritonAttentionImpl):
 
     def _supports_flash_v100_path(self) -> bool:
         """Check whether current layer/config can run Flash V100 safely."""
-        supported_kv_dtype = (
-            not self.kv_cache_dtype.startswith("fp8")
-            or self.kv_cache_dtype in ("fp8", "fp8_e4m3", "fp8_e5m2")
-        )
+        supported_kv_dtype = not self.kv_cache_dtype.startswith(
+            "fp8"
+        ) or self.kv_cache_dtype in ("fp8", "fp8_e4m3", "fp8_e5m2")
         # Causal sliding-window (left>=0, right==0) is supported by the kernels
         # via the `window` param. Full attention is (-1, -1). Bidirectional
         # (right != 0) windows are not supported.
         supported_window = (
-            self.sliding_window == (-1, -1)
-            or self.sliding_window[1] == 0
+            self.sliding_window == (-1, -1) or self.sliding_window[1] == 0
         )
         return (
             self.use_flash_v100
@@ -411,13 +428,14 @@ class FlashAttnV100Impl(TritonAttentionImpl):
         self,
         attn_metadata: TritonAttentionMetadata,
     ) -> bool:
-        if (not getattr(attn_metadata, "causal", True)
-                or not self.use_flash_v100_decode
-                or self.smallq_decode_max_query_len <= 0):
+        if (
+            not getattr(attn_metadata, "causal", True)
+            or not self.use_flash_v100_decode
+            or self.smallq_decode_max_query_len <= 0
+        ):
             return False
 
-        query_start_loc_cpu = getattr(attn_metadata, "query_start_loc_cpu",
-                                      None)
+        query_start_loc_cpu = getattr(attn_metadata, "query_start_loc_cpu", None)
         query_start_loc = (
             query_start_loc_cpu
             if query_start_loc_cpu is not None
@@ -433,8 +451,7 @@ class FlashAttnV100Impl(TritonAttentionImpl):
             self.smallq_decode_max_model_len <= 0
             or max_model_len <= self.smallq_decode_max_model_len
         )
-        return (max_query_len <= self.smallq_decode_max_query_len
-                and model_len_supported)
+        return max_query_len <= self.smallq_decode_max_query_len and model_len_supported
 
     def forward(
         self,
@@ -520,16 +537,22 @@ class FlashAttnV100Impl(TritonAttentionImpl):
                     output_block_scale,
                 )
             has_prefix_context = _has_prefix_context(attn_metadata)
-            smallq_decode = (
-                has_prefix_context
-                and self._small_query_decode_enabled(attn_metadata)
+            smallq_decode = has_prefix_context and self._small_query_decode_enabled(
+                attn_metadata
             )
             if has_prefix_context and not (smallq_decode or flash_prefill_ok):
                 # 512-dim prefix/chunked prefill can't use the 256-cap prefill
                 # kernel and isn't small-query; fall back to Triton prefill.
                 return super().forward(
-                    layer, query, key, value, kv_cache, attn_metadata,
-                    output, output_scale, output_block_scale,
+                    layer,
+                    query,
+                    key,
+                    value,
+                    kv_cache,
+                    attn_metadata,
+                    output,
+                    output_scale,
+                    output_block_scale,
                 )
             if has_prefix_context:
                 if not _logged_prefill_prefix_flash:
@@ -572,8 +595,15 @@ class FlashAttnV100Impl(TritonAttentionImpl):
             if not flash_prefill_ok:
                 # 512-dim no-prefix prefill: dense kernel caps at 256 -> Triton.
                 return super().forward(
-                    layer, query, key, value, kv_cache, attn_metadata,
-                    output, output_scale, output_block_scale,
+                    layer,
+                    query,
+                    key,
+                    value,
+                    kv_cache,
+                    attn_metadata,
+                    output,
+                    output_scale,
+                    output_block_scale,
                 )
             if not _logged_prefill_flash:
                 logger.info(
@@ -635,7 +665,9 @@ class FlashAttnV100Impl(TritonAttentionImpl):
 
         query_start_loc_cpu = getattr(attn_metadata, "query_start_loc_cpu", None)
         query_start_loc = (
-            query_start_loc_cpu if query_start_loc_cpu is not None else attn_metadata.query_start_loc
+            query_start_loc_cpu
+            if query_start_loc_cpu is not None
+            else attn_metadata.query_start_loc
         )
         num_seqs = len(query_start_loc) - 1
 
@@ -647,10 +679,7 @@ class FlashAttnV100Impl(TritonAttentionImpl):
         while run_start < num_seqs:
             run_seq_len = int(seq_lens[run_start].item())
             run_end = run_start + 1
-            while (
-                run_end < num_seqs
-                and int(seq_lens[run_end].item()) == run_seq_len
-            ):
+            while run_end < num_seqs and int(seq_lens[run_end].item()) == run_seq_len:
                 run_end += 1
 
             if run_seq_len > 0:
@@ -677,7 +706,9 @@ class FlashAttnV100Impl(TritonAttentionImpl):
                     window_size=self.sliding_window,
                 )
                 out_view[tok_start:tok_end].copy_(
-                    out_batch.view(tok_end - tok_start, out_batch.shape[2], out_batch.shape[3])
+                    out_batch.view(
+                        tok_end - tok_start, out_batch.shape[2], out_batch.shape[3]
+                    )
                 )
 
             run_start = run_end
@@ -880,8 +911,7 @@ class FlashAttnV100Impl(TritonAttentionImpl):
         block_size = key_cache.shape[1]
         num_kv_heads = key_cache.shape[2]
         head_dim = key_cache.shape[3]
-        debug_compare = (os.getenv("VLLM_FLASH_V100_DEBUG_PREFILL_COMPARE", "0")
-                         == "1")
+        debug_compare = os.getenv("VLLM_FLASH_V100_DEBUG_PREFILL_COMPARE", "0") == "1"
         # The paged prefill kernel stores the block table in smem; at long
         # max_model_len it overflows V100's 96KB. When it won't fit, use the
         # gather + dense path below (smem-safe at any context length).
@@ -897,12 +927,17 @@ class FlashAttnV100Impl(TritonAttentionImpl):
 
         query_lens = query_start_loc[1:] - query_start_loc[:-1]
         max_query_len = int(query_lens.max().item()) if num_seqs > 0 else 0
-        if (causal and self.use_flash_v100_decode
-                and self.smallq_decode_max_query_len > 0
-                and max_query_len <= self.smallq_decode_max_query_len
-                and (self.smallq_decode_max_model_len <= 0
-                     or getattr(attn_metadata, "max_model_len", 0)
-                     <= self.smallq_decode_max_model_len)):
+        if (
+            causal
+            and self.use_flash_v100_decode
+            and self.smallq_decode_max_query_len > 0
+            and max_query_len <= self.smallq_decode_max_query_len
+            and (
+                self.smallq_decode_max_model_len <= 0
+                or getattr(attn_metadata, "max_model_len", 0)
+                <= self.smallq_decode_max_model_len
+            )
+        ):
             if not _logged_prefill_smallq_decode:
                 logger.info(
                     "FLASH_ATTN_V100 prefix prefill small-query path active "
@@ -932,8 +967,8 @@ class FlashAttnV100Impl(TritonAttentionImpl):
                     query[start:end].unsqueeze(0),
                     key_cache,
                     value_cache,
-                    attn_metadata.block_table[i:i + 1],
-                    attn_metadata.seq_lens[i:i + 1],
+                    attn_metadata.block_table[i : i + 1],
+                    attn_metadata.seq_lens[i : i + 1],
                     softmax_scale=self.scale,
                     kv_cache_dtype=self.kv_cache_dtype,
                     k_scale=float(layer._k_scale_float),
@@ -945,8 +980,8 @@ class FlashAttnV100Impl(TritonAttentionImpl):
                     seq_len = int(seq_lens[i].item())
                     k_cont, v_cont = _extract_contiguous_kv_from_paged_cache(
                         kv_cache=kv_cache,
-                        block_table=attn_metadata.block_table[i:i + 1],
-                        seq_lens=attn_metadata.seq_lens[i:i + 1],
+                        block_table=attn_metadata.block_table[i : i + 1],
+                        seq_lens=attn_metadata.seq_lens[i : i + 1],
                         num_kv_heads=num_kv_heads,
                         head_dim=head_dim,
                         block_size=block_size,
@@ -999,10 +1034,12 @@ class FlashAttnV100Impl(TritonAttentionImpl):
                                 "query": query[start:end].detach().cpu(),
                                 "key_cache": key_cache.detach().cpu(),
                                 "value_cache": value_cache.detach().cpu(),
-                                "block_table": attn_metadata.block_table[
-                                    i:i + 1].detach().cpu(),
-                                "seq_lens": attn_metadata.seq_lens[
-                                    i:i + 1].detach().cpu(),
+                                "block_table": attn_metadata.block_table[i : i + 1]
+                                .detach()
+                                .cpu(),
+                                "seq_lens": attn_metadata.seq_lens[i : i + 1]
+                                .detach()
+                                .cpu(),
                                 "k_cont": k_cont.detach().cpu(),
                                 "v_cont": v_cont.detach().cpu(),
                                 "out_seq": out_seq.detach().cpu(),
@@ -1019,8 +1056,8 @@ class FlashAttnV100Impl(TritonAttentionImpl):
                 seq_len = int(seq_lens[i].item())
                 k_cont, v_cont = _extract_contiguous_kv_from_paged_cache(
                     kv_cache=kv_cache,
-                    block_table=attn_metadata.block_table[i:i + 1],
-                    seq_lens=attn_metadata.seq_lens[i:i + 1],
+                    block_table=attn_metadata.block_table[i : i + 1],
+                    seq_lens=attn_metadata.seq_lens[i : i + 1],
                     num_kv_heads=num_kv_heads,
                     head_dim=head_dim,
                     block_size=block_size,

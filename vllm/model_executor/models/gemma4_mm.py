@@ -35,16 +35,16 @@ from transformers.models.gemma4.configuration_gemma4 import (
 
 from vllm.config import VllmConfig
 from vllm.config.multimodal import BaseDummyOptions, VideoDummyOptions
-# NOTE(rivet): this base exports MultiModalDataDict from vllm.multimodal
-# (upstream re-exports it via vllm.inputs).
-from vllm.multimodal import MultiModalDataDict
 from vllm.logger import init_logger
 from vllm.model_executor.layers.layernorm import RMSNorm
 from vllm.model_executor.layers.linear import ReplicatedLinear
 from vllm.model_executor.models.gemma4 import Gemma4ForCausalLM
 from vllm.model_executor.models.module_mapping import MultiModelKeys
 from vllm.model_executor.models.transformers.utils import recursive_replace_linear
-from vllm.multimodal import MULTIMODAL_REGISTRY
+
+# NOTE(rivet): this base exports MultiModalDataDict from vllm.multimodal
+# (upstream re-exports it via vllm.inputs).
+from vllm.multimodal import MULTIMODAL_REGISTRY, MultiModalDataDict
 from vllm.multimodal.inputs import (
     MultiModalFieldConfig,
     MultiModalKwargsItems,
@@ -1646,12 +1646,13 @@ class Gemma4ForConditionalGeneration(
                     layer_idx = int(layer_name.split(".layers.")[1].split(".")[0])
                 except (ValueError, IndexError):
                     continue
-                if layer_idx in self._full_attn_layer_idxs:
-                    # mm_prefix_range_tensor is a read-only @property derived
-                    # from mm_prefix_range in this fork's TritonAttentionMetadata
-                    # (no setter); clearing the source dict suffices.
-                    if hasattr(metadata, "mm_prefix_range"):
-                        metadata.mm_prefix_range = None
+                # mm_prefix_range_tensor is a read-only @property derived
+                # from mm_prefix_range in this fork's TritonAttentionMetadata
+                # (no setter); clearing the source dict suffices.
+                if layer_idx in self._full_attn_layer_idxs and hasattr(
+                    metadata, "mm_prefix_range"
+                ):
+                    metadata.mm_prefix_range = None
 
         if isinstance(attn_metadata, list):
             for ub_metadata in attn_metadata:
@@ -1729,9 +1730,7 @@ class Gemma4ForConditionalGeneration(
             self,
             ignore_unexpected_prefixes=ignore_prefixes,
         )
-        loaded = loader.load_weights(
-            remaining_weights, mapper=self.hf_to_vllm_mapper
-        )
+        loaded = loader.load_weights(remaining_weights, mapper=self.hf_to_vllm_mapper)
         return loaded | loaded_buffers
 
     # ------------------------------------------------------------------ #

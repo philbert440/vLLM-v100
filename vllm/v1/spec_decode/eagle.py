@@ -816,9 +816,7 @@ class SpecDecodeBaseProposer:
         )
         common_attn_metadata.slot_mapping = self._slot_mapping_buffer[:batch_size]
         if self.uses_mrope:
-            self.mrope_positions[1:, :batch_size] = self.mrope_positions[
-                0, :batch_size
-            ]
+            self.mrope_positions[1:, :batch_size] = self.mrope_positions[0, :batch_size]
             positions = self.mrope_positions[:, :batch_size]
         elif self.uses_xdrope_dim > 0 and self.draft_uses_xdrope_dim > 0:
             self.xdrope_positions[1:, :batch_size] = self.xdrope_positions[

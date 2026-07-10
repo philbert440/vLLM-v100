@@ -1,18 +1,25 @@
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: Copyright contributors to the vLLM project
 """Standalone correctness test for sliding-window FLASH_ATTN_V100 (Phase 1).
 
 Compares the windowed paged decode + prefill kernels against an fp32 torch
 reference. Run on a V100 (SM70). No vLLM, no model load.
 """
+
 import torch
-from flash_attn_v100 import (flash_attn_decode_paged, flash_attn_prefill_paged,
-                             flash_attn_func)
+from flash_attn_v100 import (
+    flash_attn_decode_paged,
+    flash_attn_func,
+    flash_attn_prefill_paged,
+)
 
 torch.manual_seed(0)
 DEV = "cuda"
 
 
 def build_paged(k_cont, v_cont, block_size):
-    """k_cont/v_cont: [S, Hkv, D] -> paged [num_blocks, block_size, Hkv, D] + block_table [1, nb]."""
+    """k_cont/v_cont: [S, Hkv, D] -> paged [num_blocks, block_size, Hkv, D]
+    + block_table [1, nb]."""
     S, Hkv, D = k_cont.shape
     nb = (S + block_size - 1) // block_size
     k_cache = torch.zeros((nb, block_size, Hkv, D), dtype=k_cont.dtype, device=DEV)
@@ -47,34 +54,50 @@ def ref_attn(q, k, v, scale, window, causal_qpos=None):
 
 
 def test_decode(D, S, window, block_size=16, Hq=8, Hkv=2):
-    scale = D ** -0.5
+    scale = D**-0.5
     q = torch.randn(1, Hq, D, dtype=torch.float16, device=DEV)
     k = torch.randn(S, Hkv, D, dtype=torch.float16, device=DEV)
     v = torch.randn(S, Hkv, D, dtype=torch.float16, device=DEV)
     k_cache, v_cache, block_table = build_paged(k, v, block_size)
     seq_lens = torch.tensor([S], dtype=torch.int32, device=DEV)
     out = flash_attn_decode_paged(
-        q, k_cache, v_cache, block_table, seq_lens,
-        softmax_scale=scale, kv_cache_dtype="auto", window=window,
+        q,
+        k_cache,
+        v_cache,
+        block_table,
+        seq_lens,
+        softmax_scale=scale,
+        kv_cache_dtype="auto",
+        window=window,
     )
     ref = ref_attn(q[0], k, v, scale, window)
     got = out[0].float()
     err = (got - ref).abs().max().item()
-    print(f"  decode D={D} S={S} win={window:>5}: max_abs_err={err:.5f}  {'OK' if err < 2e-2 else 'FAIL'}")
+    print(
+        f"  decode D={D} S={S} win={window:>5}: max_abs_err={err:.5f}  "
+        f"{'OK' if err < 2e-2 else 'FAIL'}"
+    )
     return err < 2e-2
 
 
 def test_prefill(D, S, window, block_size=16, Hq=8, Hkv=2):
     """Prefill: M=S queries, causal + window. Compare last-row + a mid row."""
-    scale = D ** -0.5
+    scale = D**-0.5
     q = torch.randn(1, S, Hq, D, dtype=torch.float16, device=DEV)  # [B,M,H,D]
     k = torch.randn(S, Hkv, D, dtype=torch.float16, device=DEV)
     v = torch.randn(S, Hkv, D, dtype=torch.float16, device=DEV)
     k_cache, v_cache, block_table = build_paged(k, v, block_size)
     seq_lens = torch.tensor([S], dtype=torch.int32, device=DEV)
     out = flash_attn_prefill_paged(
-        q, k_cache, v_cache, block_table, seq_lens,
-        softmax_scale=scale, kv_cache_dtype="auto", causal=True, window=window,
+        q,
+        k_cache,
+        v_cache,
+        block_table,
+        seq_lens,
+        softmax_scale=scale,
+        kv_cache_dtype="auto",
+        causal=True,
+        window=window,
     )  # [B,M,H,D]
     qpk = Hq // Hkv
     worst = 0.0
@@ -91,18 +114,23 @@ def test_prefill(D, S, window, block_size=16, Hq=8, Hkv=2):
             ref = p @ v[:, kh].float()
             err = (out[0, qi, h].float() - ref).abs().max().item()
             worst = max(worst, err)
-    print(f"  prefill D={D} S={S} win={window:>5}: max_abs_err={worst:.5f}  {'OK' if worst < 3e-2 else 'FAIL'}")
+    print(
+        f"  prefill D={D} S={S} win={window:>5}: max_abs_err={worst:.5f}  "
+        f"{'OK' if worst < 3e-2 else 'FAIL'}"
+    )
     return worst < 3e-2
 
 
 def test_dense(D, S, window, Hq=8, Hkv=2):
     """Dense (non-paged) flash_attn_func, causal + window. q/k/v: [B,M,H,D]."""
-    scale = D ** -0.5
+    scale = D**-0.5
     q = torch.randn(1, S, Hq, D, dtype=torch.float16, device=DEV)
     k = torch.randn(1, S, Hkv, D, dtype=torch.float16, device=DEV)
     v = torch.randn(1, S, Hkv, D, dtype=torch.float16, device=DEV)
     ws = (-1, -1) if window < 0 else (window - 1, 0)
-    out = flash_attn_func(q, k, v, causal=True, softmax_scale=scale, window_size=ws)  # [B,M,H,D]
+    out = flash_attn_func(
+        q, k, v, causal=True, softmax_scale=scale, window_size=ws
+    )  # [B,M,H,D]
     qpk = Hq // Hkv
     worst = 0.0
     for qi in (S - 1, S // 2, min(window + 3, S - 1) if window > 0 else S // 3):
@@ -118,7 +146,10 @@ def test_dense(D, S, window, Hq=8, Hkv=2):
             ref = p @ v[0, :, kh].float()
             err = (out[0, qi, h].float() - ref).abs().max().item()
             worst = max(worst, err)
-    print(f"  dense   D={D} S={S} win={window:>5}: max_abs_err={worst:.5f}  {'OK' if worst < 3e-2 else 'FAIL'}")
+    print(
+        f"  dense   D={D} S={S} win={window:>5}: max_abs_err={worst:.5f}  "
+        f"{'OK' if worst < 3e-2 else 'FAIL'}"
+    )
     return worst < 3e-2
 
 
